@@ -18,7 +18,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       </main>
 
       {/* Bottom Nav visible only on mobile */}
+      <Suspense fallback={null}>
       <MobileNav />
+      </Suspense>
+      
     </div>
   )
 }
