@@ -8,6 +8,13 @@ const groq = new OpenAI({
   baseURL: 'https://api.groq.com/openai/v1'
 })
 
+// Define the expected shape of the AI response for TypeScript
+interface AIJudgment {
+  winner: 'player_a' | 'player_b' | 'draw';
+  scores: any;
+  rationale: string;
+}
+
 export async function POST(req: Request) {
   const { debate_id } = await req.json()
   
@@ -60,9 +67,9 @@ ${transcript}`
       messages: [{ role: 'user', content: prompt }],
     })
 
-    // 4. Parse the AI Response
+    // 4. Parse the AI Response safely
     const responseContent = completion.choices[0].message.content || '{}'
-    let parsed;
+    let parsed: AIJudgment;
     try {
       parsed = JSON.parse(responseContent)
     } catch (e) {
@@ -90,36 +97,41 @@ ${transcript}`
       completed_at: new Date().toISOString() 
     }).eq('id', debate_id)
 
-        // 7. Award points ONLY if it's a public matchmaking debate
-        if (!debate.is_private) {
-          const ptsA = parsed.winner === 'player_a' ? 10 : parsed.winner === 'draw' ? 5 : 3
-          const ptsB = parsed.winner === 'player_b' ? 10 : parsed.winner === 'draw' ? 5 : 3
-          
-          await admin.rpc('increment_points', { uid: debate.player_a, amt: ptsA })
-          if (debate.player_b) {
-            await admin.rpc('increment_points', { uid: debate.player_b, amt: ptsB })
-          }
-        }
+    // 7. Award points ONLY if it's a public matchmaking debate
+    if (!debate.is_private) {
+      // Define points based on the winner
+      const ptsA = parsed.winner === 'player_a' ? 10 : parsed.winner === 'draw' ? 5 : 3
+      const ptsB = parsed.winner === 'player_b' ? 10 : parsed.winner === 'draw' ? 5 : 3
+      
+      await admin.rpc('increment_points', { uid: debate.player_a, amt: ptsA })
+      
+      if (debate.player_b) {
+        await admin.rpc('increment_points', { uid: debate.player_b, amt: ptsB })
+      }
+    }
     
-    // Update player profiles
-    await admin.rpc('increment_points', { uid: debate.player_a, amt: ptsA })
-    await admin.rpc('increment_points', { uid: debate.player_b, amt: ptsB })
+    // (Removed the duplicate point awarding code that was here)
 
-    // 8. Send Notifications to BOTH players
-    await admin.from('notifications').insert([
+    // 8. Send Notifications to BOTH players (Only if player_b exists)
+    const notifications = [
       { 
         user_id: debate.player_a, 
         title: 'Verdict Ready!', 
         message: 'The AI has judged your debate. Click to see who won.', 
         link: `/debate/${debate_id}` 
-      },
-      { 
+      }
+    ]
+
+    if (debate.player_b) {
+      notifications.push({ 
         user_id: debate.player_b, 
         title: 'Verdict Ready!', 
         message: 'The AI has judged your debate. Click to see who won.', 
         link: `/debate/${debate_id}` 
-      }
-    ])
+      })
+    }
+
+    await admin.from('notifications').insert(notifications)
 
     return NextResponse.json({ success: true })
 
