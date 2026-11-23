@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  /* Backgrounds */
+  --color-bg:          #0B0B0C;
+  --color-surface:     #141416;
+  --color-surface-2:   #1C1C1F;
+  --color-border:      #2A2A2E;
+
+  /* Gold */
+  --color-gold:        #D4AF37;
+  --color-gold-hover:  #E6C458;
+  --color-gold-deep:   #A8841F;
+
+  /* Text */
+  --color-text:        #F2EFE6;
+  --color-text-muted:  #9A968A;
+  --color-on-gold:     #0B0B0C;
+
+  /* Debate sides */
+  --color-pro:         #3FA66B;
+  --color-con:         #D9534F;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
