@@ -80,15 +80,16 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#0B0B0C] p-8 text-[#F2EFE6]">
       <div className="max-w-6xl mx-auto space-y-8">
         
-        {/* Welcome Banner */}
-        <div className="bg-gradient-to-r from-[#141416] to-[#1C1C1F] p-8 rounded-2xl border border-[#2A2A2E] relative overflow-hidden flex justify-between items-center">
-          <div className="relative z-10">
-            <h1 className="text-4xl font-extrabold mb-2 text-[#F2EFE6]">
-              Welcome back, <span className="text-[#D4AF37]">{profile?.username}</span>
+               {/* Welcome Banner */}
+               <div className="bg-gradient-to-r from-[#141416] to-[#1C1C1F] p-6 md:p-8 rounded-2xl border border-[#2A2A2E] relative overflow-hidden flex justify-between items-center">
+          <div className="relative z-10 w-full md:w-2/3">
+            <h1 className="text-2xl md:text-4xl font-extrabold mb-2 text-[#F2EFE6] break-words leading-tight">
+              Welcome back, <br className="md:hidden" />
+              <span className="text-[#D4AF37]">{profile?.username}</span>
             </h1>
-            <p className="text-[#9A968A] text-lg">Ready to defend your stance today?</p>
+            <p className="text-[#9A968A] text-sm md:text-lg">Ready to defend your stance today?</p>
           </div>
-          <Trophy className="absolute -right-4 -bottom-4 text-[#D4AF37] opacity-10" size={180} />
+          <Trophy className="absolute -right-4 -bottom-4 text-[#D4AF37] opacity-10 w-32 h-32 md:w-44 md:h-44" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
