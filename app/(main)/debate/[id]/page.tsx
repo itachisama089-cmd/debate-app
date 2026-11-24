@@ -19,17 +19,16 @@ function DebateRoomContent() {
   const [currentUrl, setCurrentUrl] = useState('')
   const [timeLeft, setTimeLeft] = useState<string>('')
   
-  // Chat State
+  const [profiles, setProfiles] = useState<Record<string, any>>({})
+  
   const [message, setMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   
-  // Image Upload State
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Human Judge State
   const [isSubmittingVerdict, setIsSubmittingVerdict] = useState(false)
   const [winnerSelection, setWinnerSelection] = useState<'player_a' | 'player_b' | 'draw'>('player_a')
   const [judgeRationale, setJudgeRationale] = useState('')
@@ -43,7 +42,8 @@ function DebateRoomContent() {
     const { data: debateData } = await supabase().from('debates').select('*, topics(title, side_a_label, side_b_label)').eq('id', debateId).single()
     if (debateData) { setDebate(debateData); setTopic(debateData.topics) }
 
-    const { data: turnsData } = await supabase().from('turns').select('*').eq('debate_id', debateId).order('turn_number', { ascending: true })
+    // CHANGED: Order by created_at instead of turn_number
+    const { data: turnsData } = await supabase().from('turns').select('*').eq('debate_id', debateId).order('created_at', { ascending: true })
     if (turnsData) setTurns(turnsData)
 
     const { data: judgeData } = await supabase().from('judgments').select('*').eq('debate_id', debateId).single()
@@ -67,6 +67,24 @@ function DebateRoomContent() {
   }, [debateId])
 
   useEffect(() => {
+    if (debate?.player_a && debate?.player_b) {
+      const fetchProfiles = async () => {
+        const { data } = await supabase()
+          .from('profiles')
+          .select('id, username, avatar_url')
+          .in('id', [debate.player_a, debate.player_b])
+        
+        if (data) {
+          const profileMap: Record<string, any> = {}
+          data.forEach(p => { profileMap[p.id] = p })
+          setProfiles(profileMap)
+        }
+      }
+      fetchProfiles()
+    }
+  }, [debate?.player_a, debate?.player_b])
+
+  useEffect(() => {
     if (!debate?.deadline || debate.status !== 'live') return
     const interval = setInterval(() => {
       const now = new Date().getTime()
@@ -76,7 +94,7 @@ function DebateRoomContent() {
         if (debate.status === 'live' && !debate.judge_id) {
           fetch('/api/judge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ debate_id: debateId }) })
         } else if (debate.status === 'live' && debate.judge_id) {
-          fetch(`/api/debates/${debateId}/done`, { method: 'POST' }) // Trigger done state
+          fetch(`/api/debates/${debateId}/done`, { method: 'POST' })
         }
         return
       }
@@ -123,9 +141,10 @@ function DebateRoomContent() {
         setIsUploading(false)
       }
 
+      // CHANGED: Removed turn_number from the payload
       const res = await fetch(`/api/debates/${debateId}/turns`, { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ content: message || "[Image sent]", turn_number: debate.current_turn, image_url: uploadedImageUrl }) 
+        body: JSON.stringify({ content: message || "[Image sent]", image_url: uploadedImageUrl }) 
       })
       
       if (res.ok) { setMessage(''); clearImage() } 
@@ -176,10 +195,9 @@ function DebateRoomContent() {
   const isJudge = userId === debate.judge_id
   const isSpectator = !isPlayerA && !isPlayerB && !isJudge
 
-  const isPlayerATurn = (debate.current_turn || 1) % 2 !== 0
+  // CHANGED: Removed isPlayerATurn. Players can just chat if it's live and they aren't done.
   const myDoneStatus = isPlayerA ? debate.player_a_done : debate.player_b_done
-  const opponentDoneStatus = isPlayerA ? debate.player_b_done : debate.player_a_done
-  const isMyTurn = debate.status === 'live' && !myDoneStatus && ((isPlayerA && isPlayerATurn) || (isPlayerB && !isPlayerATurn))
+  const canChat = debate.status === 'live' && !myDoneStatus
   
   const proColor = 'text-[#A3B18A]'
   const proBg = 'bg-[#A3B18A]/20 border-[#A3B18A]/30'
@@ -242,8 +260,8 @@ function DebateRoomContent() {
             <p className="text-[#9A968A]">Judged by: {judgment.judge_type === 'human' ? 'Third Party' : 'AI'}</p>
           </div>
           <div className={`p-6 rounded-xl text-center mb-8 border ${isDraw ? 'bg-[#1C1C1F] border-[#2A2A2E]' : iWon ? 'bg-[#A3B18A]/10 border-[#A3B18A]/50' : 'bg-[#BC4749]/10 border-[#BC4749]/50'}`}>
-            <h2 className="text-2xl font-bold mb-2">{isDraw ? "It's a Draw!" : iWon ? "You Won! 🏆" : "You Lost"}</h2>
-            <p className="text-[#F2EFE6] text-sm">{judgment.rationale}</p>
+            <h2 className="text-2xl font-bold mb-2">{isDraw ? "It's a Draw / Void!" : iWon ? "You Won! 🏆" : "You Lost"}</h2>
+            <p className="text-[#F2EFE6] text-sm whitespace-pre-wrap">{judgment.rationale}</p>
           </div>
           <button onClick={() => router.push('/topics')} className="w-full bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] font-bold py-3 rounded-lg transition-colors">Back to Topics</button>
         </div>
@@ -280,14 +298,51 @@ function DebateRoomContent() {
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {turns.map((turn) => {
             const isMe = turn.user_id === userId
-            const playerLabel = turn.user_id === debate.player_a ? (topic?.side_a_label || 'Player A') : (topic?.side_b_label || 'Player B')
+            const profile = profiles[turn.user_id]
+            
+            const username = profile?.username || (turn.user_id === debate.player_a ? (topic?.side_a_label || 'Player A') : (topic?.side_b_label || 'Player B'))
+            const avatarUrl = profile?.avatar_url
+
             return (
-              <div key={turn.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                <span className="text-xs text-[#9A968A] mb-1">{playerLabel}</span>
-                <div className={`max-w-[80%] p-4 rounded-2xl ${isMe ? 'bg-[#D4AF37] text-[#0B0B0C] rounded-br-sm font-medium' : 'bg-[#1C1C1F] text-[#F2EFE6] rounded-bl-sm'}`}>
-                  {turn.image_url && <img src={turn.image_url} alt="Attachment" className="max-w-full rounded-lg mb-2 border border-black/20" />}
-                  {turn.content !== "[Image sent]" && turn.content}
+              <div key={turn.id} className={`flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                {/* Opponent Avatar */}
+                {!isMe && (
+                  <div className="w-8 h-8 rounded-full overflow-hidden mr-2 flex-shrink-0 bg-[#2A2A2E] flex items-center justify-center text-xs font-bold text-[#9A968A]">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
+                    ) : (
+                      username.charAt(0).toUpperCase()
+                    )}
+                  </div>
+                )}
+
+                {/* Message Bubble */}
+                <div className={`max-w-[75%] p-4 rounded-2xl ${
+                  isMe 
+                    ? 'bg-[#D4AF37] text-[#0B0B0C] rounded-tr-sm font-medium' 
+                    : 'bg-[#1C1C1F] text-[#F2EFE6] rounded-tl-sm border border-[#2A2A2E]'
+                }`}>
+                  {/* Username above opponent's message */}
+                  {!isMe && <p className="text-xs font-semibold mb-1 text-[#9A968A]">{username}</p>}
+                  
+                  {turn.image_url && (
+                    <img src={turn.image_url} alt="Attachment" className="max-w-full rounded-lg mb-2 border border-black/20" />
+                  )}
+                  {turn.content !== "[Image sent]" && (
+                    <p className="text-sm whitespace-pre-wrap">{turn.content}</p>
+                  )}
                 </div>
+
+                {/* My Avatar */}
+                {isMe && (
+                  <div className="w-8 h-8 rounded-full overflow-hidden ml-2 flex-shrink-0 bg-[#2A2A2E] flex items-center justify-center text-xs font-bold text-[#9A968A]">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
+                    ) : (
+                      username.charAt(0).toUpperCase()
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -300,7 +355,7 @@ function DebateRoomContent() {
           {/* DEBATE IN PROGRESS */}
           {debate.status === 'live' && (
             <>
-              {/* Invite Judge Button (If no judge and user is a player) */}
+              {/* Invite Judge Button */}
               {!debate.judge_id && (isPlayerA || isPlayerB) && (
                 <div className="text-center p-2 text-[#D4AF37] bg-[#1C1C1F] rounded-xl border border-[#2A2A2E] flex justify-between items-center px-4">
                   <span className="text-sm">Want a human judge?</span>
@@ -312,7 +367,7 @@ function DebateRoomContent() {
               {(isPlayerA || isPlayerB) && (
                 myDoneStatus ? (
                   <div className="text-center p-3 text-[#A3B18A] bg-[#A3B18A]/10 border border-[#A3B18A]/20 rounded-xl flex items-center justify-center gap-2"><CheckCircle size={18} /> You have finished. Waiting for opponent...</div>
-                ) : isMyTurn ? (
+                ) : canChat ? (
                   <div className="flex flex-col gap-2 w-full">
                     {imagePreview && (
                       <div className="relative inline-block w-32">
@@ -330,8 +385,7 @@ function DebateRoomContent() {
                   </div>
                 ) : (
                   <div className="text-center p-3 text-[#9A968A] bg-[#1C1C1F] rounded-xl border border-[#2A2A2E] flex justify-between items-center">
-                    <span>Waiting for opponent...</span>
-                    <button onClick={handleDone} className="bg-transparent border border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#0B0B0C] font-bold px-4 py-1 rounded-lg text-sm">Done</button>
+                    <span>Debate is not active.</span>
                   </div>
                 )
               )}
@@ -354,13 +408,13 @@ function DebateRoomContent() {
                 
                 <div className="grid grid-cols-3 gap-2">
                   <button type="button" onClick={() => setWinnerSelection('player_a')} className={`p-3 rounded-lg border text-center font-bold transition-all ${winnerSelection === 'player_a' ? 'bg-[#A3B18A] text-[#0B0B0C] border-[#A3B18A]' : 'bg-[#0B0B0C] text-[#9A968A] border-[#2A2A2E]'}`}>
-                    {topic?.side_a_label || 'Player A'}
+                    {profiles[debate.player_a]?.username || topic?.side_a_label || 'Player A'}
                   </button>
                   <button type="button" onClick={() => setWinnerSelection('draw')} className={`p-3 rounded-lg border text-center font-bold transition-all ${winnerSelection === 'draw' ? 'bg-[#D4AF37] text-[#0B0B0C] border-[#D4AF37]' : 'bg-[#0B0B0C] text-[#9A968A] border-[#2A2A2E]'}`}>
                     Draw
                   </button>
                   <button type="button" onClick={() => setWinnerSelection('player_b')} className={`p-3 rounded-lg border text-center font-bold transition-all ${winnerSelection === 'player_b' ? 'bg-[#BC4749] text-[#F2EFE6] border-[#BC4749]' : 'bg-[#0B0B0C] text-[#9A968A] border-[#2A2A2E]'}`}>
-                    {topic?.side_b_label || 'Player B'}
+                    {profiles[debate.player_b]?.username || topic?.side_b_label || 'Player B'}
                   </button>
                 </div>
 
