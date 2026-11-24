@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+import { createServerClient } from '@/lib/supabase/server'
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const debateId = params.id
-  const supabase = createRouteHandlerClient({ cookies })
+  // Next.js 15 requires awaiting params
+  const { id: debateId } = await params
+  const supabase = await createServerClient()
 
   // 1. Get the current user
   const { data: { user } } = await supabase.auth.getUser()
@@ -19,7 +19,7 @@ export async function POST(
   const body = await req.json()
   const { content, image_url } = body
 
-  // 3. Validate the payload (No more turn_number check!)
+  // 3. Validate the payload (No more turn_number check)
   if (!content && !image_url) {
     return NextResponse.json(
       { error: 'Missing content or image' },
@@ -33,7 +33,7 @@ export async function POST(
     .insert({
       debate_id: debateId,
       user_id: user.id,
-      content: content || '', // Ensure content is a string
+      content: content || '',
       image_url: image_url || null,
       // turn_number is removed since the column is gone
     })
