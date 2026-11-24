@@ -12,16 +12,13 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         </Suspense>
       </div>
       
-      {/* Main Content Area - add bottom padding on mobile for the nav bar */}
-      <main className="flex-1 overflow-y-auto pb-20 md:pb-0 h-screen">
+      {/* Main Content Area - padding bottom on mobile for the nav bar */}
+      <main className="flex-1 w-full pb-20 md:pb-0 h-screen overflow-y-auto">
         {children}
       </main>
 
       {/* Bottom Nav visible only on mobile */}
-      <Suspense fallback={null}>
       <MobileNav />
-      </Suspense>
-      
     </div>
   )
 }

@@ -45,7 +45,9 @@ export default function TopicsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { fetchTopics() }, [])
+  useEffect(() => { 
+    fetchTopics() 
+  }, [])
 
   const handleCreateTopic = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -104,22 +106,23 @@ export default function TopicsPage() {
   }
  
   return (
-    <div className="p-8 max-w-6xl mx-auto text-[#F2EFE6] bg-[#0B0B0C] min-h-screen relative">
+    <div className="p-4 md:p-8 max-w-6xl mx-auto text-[#F2EFE6] bg-[#0B0B0C] min-h-screen relative">
       {/* Hero */}
       <div className="relative w-full h-48 md:h-64 rounded-3xl overflow-hidden mb-8 border border-[#2A2A2E]">
         <img src="https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2070&auto=format&fit=crop" alt="Auditorium" className="absolute inset-0 w-full h-full object-cover opacity-30" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0B0B0C] via-[#0B0B0C]/80 to-transparent" />
-        <div className="relative z-10 p-10 h-full flex flex-col justify-center">
-          <h1 className="text-4xl font-bold mb-2">Welcome to <span className="text-[#D4AF37]">DebateHub!</span></h1>
-          <p className="text-[#9A968A]">Share your thoughts. Spark discussions. Find new perspectives.</p>
+        <div className="relative z-10 p-6 md:p-10 h-full flex flex-col justify-center">
+          <h1 className="text-3xl md:text-4xl font-bold mb-2">Welcome to <span className="text-[#D4AF37]">DebateHub!</span></h1>
+          <p className="text-sm md:text-base text-[#9A968A]">Share your thoughts. Spark discussions. Find new perspectives.</p>
         </div>
       </div>
 
       {/* Composer */}
       <div className="bg-[#141416] p-4 rounded-2xl border border-[#2A2A2E] mb-6 flex flex-col gap-4">
         <form onSubmit={handleCreateTopic} className="flex flex-col gap-4">
-        <div className="flex flex-col md:flex-row gap-2 w-full">
-
+          
+          {/* Topic Title & Category */}
+          <div className="flex flex-col md:flex-row gap-2 w-full">
             <input
               type="text"
               placeholder="What should we debate?"
@@ -139,20 +142,40 @@ export default function TopicsPage() {
             </select>
           </div>
           
-          <div className="flex flex-col md:flex-row gap-2 items-stretch md:items-center">
-            <span className="text-sm text-[#9A968A]">Sides:</span>
-            <input type="text" placeholder="Side A" value={sideALabel} onChange={(e) => setSideALabel(e.target.value)} className="flex-1 bg-[#1C1C1F] text-[#F2EFE6] placeholder-[#9A968A] px-3 py-2 border border-[#2A2A2E] rounded-lg focus:outline-none" required />
-            <span className="text-[#9A968A]">vs</span>
-            <input type="text" placeholder="Side B" value={sideBLabel} onChange={(e) => setSideBLabel(e.target.value)} className="flex-1 bg-[#1C1C1F] text-[#F2EFE6] placeholder-[#9A968A] px-3 py-2 border border-[#2A2A2E] rounded-lg focus:outline-none" required />
-            <button type="submit" disabled={isSubmitting} className="bg-gradient-to-r from-[#D4AF37] to-[#A8841F] hover:from-[#E6C458] hover:to-[#D4AF37] text-[#0B0B0C] font-bold px-6 py-2 rounded-lg flex items-center gap-2 transition-all disabled:opacity-50">
-              <Send size={18} /> Post
+          {/* Sides & Post Button */}
+          <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+            <span className="text-sm text-[#9A968A] font-medium hidden md:block">Sides:</span>
+            <input 
+              type="text" 
+              placeholder="Side A (e.g., Yes)" 
+              value={sideALabel} 
+              onChange={(e) => setSideALabel(e.target.value)} 
+              className="flex-1 bg-[#1C1C1F] text-[#F2EFE6] placeholder-[#9A968A] px-3 py-2 border border-[#2A2A2E] rounded-lg focus:outline-none" 
+              required 
+            />
+            <span className="text-[#9A968A] text-center font-bold hidden md:block">vs</span>
+            <input 
+              type="text" 
+              placeholder="Side B (e.g., No)" 
+              value={sideBLabel} 
+              onChange={(e) => setSideBLabel(e.target.value)} 
+              className="flex-1 bg-[#1C1C1F] text-[#F2EFE6] placeholder-[#9A968A] px-3 py-2 border border-[#2A2A2E] rounded-lg focus:outline-none" 
+              required 
+            />
+            <button 
+              type="submit" 
+              disabled={isSubmitting} 
+              className="bg-gradient-to-r from-[#D4AF37] to-[#A8841F] hover:from-[#E6C458] hover:to-[#D4AF37] text-[#0B0B0C] font-bold px-6 py-3 md:py-2 rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 mt-2 md:mt-0"
+            >
+              <Send size={18} /> {isSubmitting ? 'Posting...' : 'Post'}
             </button>
           </div>
         </form>
       </div>
 
+      {/* Private Room Button */}
       <div className="flex justify-end mb-8">
-        <button onClick={() => setIsPrivateModalOpen(true)} className="bg-[#141416] hover:bg-[#1C1C1F] border border-[#D4AF37] text-[#D4AF37] font-medium px-6 py-3 rounded-xl flex items-center gap-2 transition-colors">
+        <button onClick={() => setIsPrivateModalOpen(true)} className="w-full md:w-auto bg-[#141416] hover:bg-[#1C1C1F] border border-[#D4AF37] text-[#D4AF37] font-medium px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-colors">
           <Lock size={18} /> Create Private Room
         </button>
       </div>
@@ -237,7 +260,7 @@ export default function TopicsPage() {
                 />
               </div>
               
-              <div className="flex gap-4">
+              <div className="flex flex-col md:flex-row gap-4">
                 <div className="flex-1">
                   <label className="text-xs text-[#9A968A] font-bold uppercase mb-1 block">Side A</label>
                   <input 
