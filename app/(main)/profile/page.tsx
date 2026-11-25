@@ -177,6 +177,8 @@ export default function ProfilePage() {
         </div>
 
         <div className="lg:col-span-2 space-y-8">
+          
+          {/* UPDATED LEADERBOARD SECTION */}
           <div className="bg-[#141416] p-6 rounded-2xl border border-[#2A2A2E]">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
               <Trophy className="text-[#D4AF37]" /> Global Leaderboard
@@ -185,22 +187,40 @@ export default function ProfilePage() {
               {leaderboard.map((player, index) => {
                 const isRank1 = index === 0;
                 return (
-                  <div key={player.id} className={`flex items-center justify-between p-3 rounded-lg border ${player.id === profile?.id ? 'bg-[#D4AF37]/10 border-[#D4AF37]/50' : isRank1 ? 'bg-gradient-to-r from-[#D4AF37]/20 to-[#141416] border-[#D4AF37]/30' : 'bg-[#0B0B0C] border-[#2A2A2E]'}`}>
-                    <div className="flex items-center gap-4">
-                      <span className={`font-bold w-6 text-center ${isRank1 ? 'text-[#D4AF37] text-lg' : index === 1 ? 'text-[#C0C0C0]' : index === 2 ? 'text-[#CD7F32]' : 'text-[#9A968A]'}`}>#{index + 1}</span>
-                      {player.avatar_url ? (
-                        <img src={player.avatar_url} className="w-8 h-8 rounded-full object-cover border border-[#2A2A2E]" />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-[#1C1C1F] flex items-center justify-center text-xs font-bold text-[#D4AF37]">{player.username.charAt(0).toUpperCase()}</div>
-                      )}
-                      <span className="font-medium">{player.username} {player.id === profile?.id && "(You)"}</span>
+                  <div key={player.id} className={`flex items-center justify-between p-3 rounded-lg border w-full ${player.id === profile?.id ? 'bg-[#D4AF37]/10 border-[#D4AF37]/50' : isRank1 ? 'bg-gradient-to-r from-[#D4AF37]/20 to-[#141416] border-[#D4AF37]/30' : 'bg-[#0B0B0C] border-[#2A2A2E]'}`}>
+                    
+                    {/* LEFT SIDE: Rank, Avatar, Username */}
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <span className={`font-bold w-6 text-center shrink-0 ${isRank1 ? 'text-[#D4AF37] text-lg' : index === 1 ? 'text-[#C0C0C0]' : index === 2 ? 'text-[#CD7F32]' : 'text-[#9A968A]'}`}>
+                        #{index + 1}
+                      </span>
+                      
+                      <div className="shrink-0">
+                        {player.avatar_url ? (
+                          <img src={player.avatar_url} className="w-8 h-8 rounded-full object-cover border border-[#2A2A2E]" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-[#1C1C1F] flex items-center justify-center text-xs font-bold text-[#D4AF37]">
+                            {player.username.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <span className="font-medium truncate">
+                        {player.username} {player.id === profile?.id && "(You)"}
+                      </span>
                     </div>
-                    <span className={`font-bold ${isRank1 ? 'text-[#D4AF37]' : 'text-[#9A968A]'}`}>{player.points} pts</span>
+
+                    {/* RIGHT SIDE: Points */}
+                    <span className={`font-bold shrink-0 ml-2 text-right whitespace-nowrap ${isRank1 ? 'text-[#D4AF37]' : 'text-[#9A968A]'}`}>
+                      {player.points} pts
+                    </span>
+                    
                   </div>
                 )
               })}
             </div>
           </div>
+          {/* END UPDATED LEADERBOARD SECTION */}
 
           <div className="bg-[#141416] p-6 rounded-2xl border border-[#2A2A2E]">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
