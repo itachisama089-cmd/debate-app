@@ -31,6 +31,7 @@ export async function POST(req: Request) {
   }
 
   try {
+    // 2. Fetch data (Topic, Turns, and Profiles)
     const { data: topic } = await admin.from('topics').select('title').eq('id', debate.topic_id).single()
     
     const { data: profiles } = await admin
@@ -44,14 +45,13 @@ export async function POST(req: Request) {
     const nameA = profileMap[debate.player_a] || 'Player A'
     const nameB = profileMap[debate.player_b] || 'Player B'
 
-    // Fetch turns ordered by created_at now
     const { data: turns } = await admin
       .from('turns')
       .select('*')
       .eq('debate_id', debate_id)
       .order('created_at', { ascending: true })
 
-    // --- CHECK FOR EMPTY DEBATE (NULL & VOID) ---
+    // Check for empty debate
     const hasValidTurns = turns && turns.some(t => t.content && t.content.trim() !== '' && t.content !== '[Image sent]')
     
     if (!hasValidTurns) {
@@ -62,21 +62,23 @@ export async function POST(req: Request) {
 
       await admin.from('judgments').insert({
         debate_id,
-        winner_id: null, // Draw / Void
+        winner_id: null,
         scores: nullScores,
         rationale: "This debate is null and void. Neither participant submitted any arguments or write-ups.",
         model_version: 'system-null-void',
       })
 
+      // Update status to completed for empty debates
       await admin.from('debates').update({ status: 'completed' }).eq('id', debate_id)
+      
       return NextResponse.json({ success: true, message: "Empty debate awarded 0 points." })
     }
-    // ---------------------------------------------
 
     const transcript = (turns || [])
       .map(t => `${t.user_id === debate.player_a ? nameA : nameB}: ${t.content}`)
       .join('\n\n')
 
+    // 3. Call Groq with the updated prompt
     const prompt = `You are an impartial debate judge. Judge ONLY the transcript below.
 Topic: ${topic?.title}
 Format: Free-form chat debate.
@@ -104,25 +106,42 @@ ${transcript}`
       messages: [{ role: 'user', content: prompt }],
     })
 
+    // ==========================================
+    // THIS IS THE MISSING BLOCK CAUSING THE ERROR
+    // ==========================================
     const responseContent = completion.choices[0].message.content || '{}'
     let parsed: AIJudgment
     try {
       parsed = JSON.parse(responseContent)
     } catch (e) {
+      console.error("Failed to parse AI JSON:", responseContent)
       throw new Error("AI returned invalid JSON format")
     }
+    // ==========================================
 
-    await admin.from('judgments').insert({
-      debate_id,
-      winner_id: parsed.winner === 'player_a' ? debate.player_a : parsed.winner === 'player_b' ? debate.player_b : null,
-      scores: parsed.scores,
-      rationale: parsed.rationale,
-      model_version: 'openai/gpt-oss-120b',
-    })
+       // 4. Save judgment to database
+       const { error: judgeError } = await admin.from('judgments').upsert({
+        debate_id,
+        winner_id: parsed.winner === 'player_a' ? debate.player_a : parsed.winner === 'player_b' ? debate.player_b : null,
+        scores: parsed.scores,
+        rationale: parsed.rationale,
+        model_version: 'openai/gpt-oss-120b',
+      }, { onConflict: 'debate_id' })
+  
+      if (judgeError) {
+        // THIS WILL PRINT THE FULL ERROR TO YOUR TERMINAL
+        console.error("FULL SUPABASE ERROR:", JSON.stringify(judgeError, null, 2))
+        throw new Error(`Database rejected the judgment: ${judgeError.message}`)
+      }
+
+    // 5. Mark debate as completed so the UI updates
+    await admin.from('debates').update({ status: 'completed' }).eq('id', debate_id)
 
     return NextResponse.json({ success: true })
+
   } catch (error: any) {
     console.error("🚨 AI JUDGE FAILED:", error)
+    // Unlock the debate if the AI fails so players aren't stuck
     await admin.from('debates').update({ status: 'live' }).eq('id', debate_id)
     return NextResponse.json({ error: error.message || 'AI failed to judge' }, { status: 500 })
   }

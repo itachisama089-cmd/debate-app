@@ -2,13 +2,15 @@
 
 import { Suspense, useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
-import { useParams, useRouter } from 'next/navigation'
-import { Send, Scale, Clock, CheckCircle, Loader2, Image as ImageIcon, X, Gavel, UserCheck } from 'lucide-react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { Send, Scale, Clock, CheckCircle, Loader2, Image as ImageIcon, X, Gavel, UserCheck, Copy } from 'lucide-react'
 
 function DebateRoomContent() {
   const params = useParams()
   const debateId = params.id as string
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isJudgeInvite = searchParams.get('role') === 'judge'
   
   const [debate, setDebate] = useState<any>(null)
   const [topic, setTopic] = useState<any>(null)
@@ -42,7 +44,6 @@ function DebateRoomContent() {
     const { data: debateData } = await supabase().from('debates').select('*, topics(title, side_a_label, side_b_label)').eq('id', debateId).single()
     if (debateData) { setDebate(debateData); setTopic(debateData.topics) }
 
-    // CHANGED: Order by created_at instead of turn_number
     const { data: turnsData } = await supabase().from('turns').select('*').eq('debate_id', debateId).order('created_at', { ascending: true })
     if (turnsData) setTurns(turnsData)
 
@@ -54,7 +55,7 @@ function DebateRoomContent() {
 
   useEffect(() => {
     fetchDebate()
-    setCurrentUrl(window.location.href)
+    setCurrentUrl(window.location.href.split('?')[0]) // Get base URL without query params
 
     const channel = supabase().channel(`room:${debateId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'turns', filter: `debate_id=eq.${debateId}` }, (payload) => { setTurns((prev) => [...prev, payload.new]) })
@@ -108,6 +109,11 @@ function DebateRoomContent() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [turns])
 
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text)
+    alert(`${label} link copied to clipboard!`)
+  }
+
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -141,7 +147,6 @@ function DebateRoomContent() {
         setIsUploading(false)
       }
 
-      // CHANGED: Removed turn_number from the payload
       const res = await fetch(`/api/debates/${debateId}/turns`, { 
         method: 'POST', headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ content: message || "[Image sent]", image_url: uploadedImageUrl }) 
@@ -195,7 +200,6 @@ function DebateRoomContent() {
   const isJudge = userId === debate.judge_id
   const isSpectator = !isPlayerA && !isPlayerB && !isJudge
 
-  // CHANGED: Removed isPlayerATurn. Players can just chat if it's live and they aren't done.
   const myDoneStatus = isPlayerA ? debate.player_a_done : debate.player_b_done
   const canChat = debate.status === 'live' && !myDoneStatus
   
@@ -216,7 +220,7 @@ function DebateRoomContent() {
           <h1 className="text-3xl font-extrabold mb-3 text-[#F2EFE6]">Topic: {topic?.title}</h1>
           {!isSpectator && <p className="text-[#9A968A] mb-8">You are arguing <span className={`font-bold px-2 py-1 rounded-md ${myColorClass}`}>{myStanceLabel}</span></p>}
           
-          {isSpectator ? (
+          {isSpectator && isJudgeInvite ? (
              <div className="bg-[#0B0B0C] p-6 rounded-lg border border-[#D4AF37] mb-8">
                 <Gavel className="mx-auto text-[#D4AF37] mb-4" size={48} />
                 <p className="text-lg font-medium mb-4 text-[#D4AF37]">You have been invited to Judge!</p>
@@ -224,9 +228,19 @@ function DebateRoomContent() {
              </div>
           ) : debate.is_private ? (
             isPlayerA ? (
-              <div className="bg-[#0B0B0C] p-6 rounded-lg border border-[#D4AF37] mb-8">
+              <div className="bg-[#0B0B0C] p-6 rounded-lg border border-[#D4AF37] mb-8 w-full">
                 <p className="text-lg font-medium mb-4 text-[#D4AF37]">Waiting for opponent...</p>
-                <code className="block bg-[#1C1C1F] p-3 rounded-lg text-sm text-[#F2EFE6] select-all w-full mx-auto break-all">{currentUrl}</code>
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <code className="block bg-[#1C1C1F] p-3 rounded-lg text-sm text-[#F2EFE6] w-full truncate border border-[#2A2A2E]">
+                    {currentUrl}
+                  </code>
+                  <button 
+                    onClick={() => copyToClipboard(currentUrl, "Opponent invite")} 
+                    className="flex items-center gap-2 bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] font-bold py-3 px-6 rounded-lg transition-colors whitespace-nowrap w-full sm:w-auto justify-center"
+                  >
+                    <Copy size={18} /> Copy Link
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="bg-[#0B0B0C] p-6 rounded-lg border border-[#D4AF37] mb-8">
@@ -271,11 +285,11 @@ function DebateRoomContent() {
 
   // 3. LIVE CHAT / JUDGING SCREEN
   return (
-    <div className="min-h-screen bg-[#0B0B0C] p-4 md:p-8 flex flex-col items-center">
-      <div className="max-w-4xl w-full bg-[#141416] rounded-xl border border-[#2A2A2E] flex flex-col h-[85vh]">
+    <div className="min-h-screen bg-[#0B0B0C] p-2 sm:p-4 md:p-8 flex flex-col items-center overflow-hidden">
+      <div className="max-w-4xl w-full bg-[#141416] rounded-xl border border-[#2A2A2E] flex flex-col h-[90vh] md:h-[85vh] overflow-hidden">
         
         {/* Header */}
-        <div className="p-6 border-b border-[#2A2A2E] flex justify-between items-center bg-[#0B0B0C] rounded-t-xl">
+        <div className="p-4 sm:p-6 border-b border-[#2A2A2E] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#0B0B0C] rounded-t-xl">
           <div>
             <div className="flex items-center gap-4">
               <span className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-full ${debate.status === 'live' ? 'text-[#A3B18A] bg-[#A3B18A]/10' : 'text-[#D4AF37] bg-[#D4AF37]/10'}`}>
@@ -305,7 +319,6 @@ function DebateRoomContent() {
 
             return (
               <div key={turn.id} className={`flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                {/* Opponent Avatar */}
                 {!isMe && (
                   <div className="w-8 h-8 rounded-full overflow-hidden mr-2 flex-shrink-0 bg-[#2A2A2E] flex items-center justify-center text-xs font-bold text-[#9A968A]">
                     {avatarUrl ? (
@@ -316,13 +329,11 @@ function DebateRoomContent() {
                   </div>
                 )}
 
-                {/* Message Bubble */}
                 <div className={`max-w-[75%] p-4 rounded-2xl ${
                   isMe 
                     ? 'bg-[#D4AF37] text-[#0B0B0C] rounded-tr-sm font-medium' 
                     : 'bg-[#1C1C1F] text-[#F2EFE6] rounded-tl-sm border border-[#2A2A2E]'
                 }`}>
-                  {/* Username above opponent's message */}
                   {!isMe && <p className="text-xs font-semibold mb-1 text-[#9A968A]">{username}</p>}
                   
                   {turn.image_url && (
@@ -333,7 +344,6 @@ function DebateRoomContent() {
                   )}
                 </div>
 
-                {/* My Avatar */}
                 {isMe && (
                   <div className="w-8 h-8 rounded-full overflow-hidden ml-2 flex-shrink-0 bg-[#2A2A2E] flex items-center justify-center text-xs font-bold text-[#9A968A]">
                     {avatarUrl ? (
@@ -352,18 +362,25 @@ function DebateRoomContent() {
         {/* Action Area */}
         <div className="p-4 border-t border-[#2A2A2E] bg-[#0B0B0C] rounded-b-xl flex flex-col gap-3">
           
-          {/* DEBATE IN PROGRESS */}
           {debate.status === 'live' && (
             <>
-              {/* Invite Judge Button */}
               {!debate.judge_id && (isPlayerA || isPlayerB) && (
-                <div className="text-center p-2 text-[#D4AF37] bg-[#1C1C1F] rounded-xl border border-[#2A2A2E] flex justify-between items-center px-4">
-                  <span className="text-sm">Want a human judge?</span>
-                  <code className="text-xs bg-[#0B0B0C] p-1 rounded select-all">{currentUrl}?role=judge</code>
+                <div className="p-3 text-[#D4AF37] bg-[#1C1C1F] rounded-xl border border-[#2A2A2E] flex flex-col sm:flex-row justify-between items-center gap-2 w-full overflow-hidden">
+                  <span className="text-sm whitespace-nowrap font-bold">Invite a Human Judge:</span>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                    <code className="text-xs bg-[#0B0B0C] p-2 rounded border border-[#2A2A2E] w-full sm:max-w-[200px] truncate">
+                      {currentUrl}?role=judge
+                    </code>
+                    <button 
+                      onClick={() => copyToClipboard(`${currentUrl}?role=judge`, "Judge invite")} 
+                      className="flex items-center gap-2 bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] font-bold py-2 px-4 rounded text-sm transition-colors w-full sm:w-auto justify-center whitespace-nowrap"
+                    >
+                      <Copy size={16} /> Copy Link
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* If Player */}
               {(isPlayerA || isPlayerB) && (
                 myDoneStatus ? (
                   <div className="text-center p-3 text-[#A3B18A] bg-[#A3B18A]/10 border border-[#A3B18A]/20 rounded-xl flex items-center justify-center gap-2"><CheckCircle size={18} /> You have finished. Waiting for opponent...</div>
@@ -375,12 +392,18 @@ function DebateRoomContent() {
                         <button onClick={clearImage} className="absolute -top-2 -right-2 bg-[#BC4749] text-white rounded-full p-1 shadow-lg"><X size={14} /></button>
                       </div>
                     )}
-                    <form onSubmit={handleSendMessage} className="flex gap-2">
+                    <form onSubmit={handleSendMessage} className="flex gap-2 w-full">
                       <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageSelect} className="hidden" />
-                      <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-[#1C1C1F] border border-[#2A2A2E] hover:border-[#D4AF37] text-[#9A968A] hover:text-[#D4AF37] px-4 rounded-xl flex items-center justify-center"><ImageIcon size={20} /></button>
-                      <input type="text" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Type your argument..." className="flex-1 bg-[#1C1C1F] text-[#F2EFE6] border border-[#2A2A2E] rounded-xl px-4 py-3 focus:outline-none focus:border-[#D4AF37]" disabled={isSubmitting || isUploading} />
-                      <button type="submit" disabled={isSubmitting || isUploading || (!message.trim() && !selectedImage)} className="bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] px-6 rounded-xl flex items-center justify-center disabled:opacity-50">{isSubmitting || isUploading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}</button>
-                      <button type="button" onClick={handleDone} disabled={isSubmitting || isUploading} className="bg-transparent border-2 border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#0B0B0C] font-bold px-6 rounded-xl transition-colors disabled:opacity-50">Done</button>
+                      <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-[#1C1C1F] border border-[#2A2A2E] hover:border-[#D4AF37] text-[#9A968A] hover:text-[#D4AF37] px-3 sm:px-4 rounded-xl flex items-center justify-center shrink-0">
+                        <ImageIcon size={20} />
+                      </button>
+                      
+                      <input type="text" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Type your argument..." className="flex-1 min-w-0 bg-[#1C1C1F] text-[#F2EFE6] border border-[#2A2A2E] rounded-xl px-3 sm:px-4 py-3 focus:outline-none focus:border-[#D4AF37]" disabled={isSubmitting || isUploading} />
+                      
+                      <button type="submit" disabled={isSubmitting || isUploading || (!message.trim() && !selectedImage)} className="bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] px-3 sm:px-6 rounded-xl flex items-center justify-center disabled:opacity-50 shrink-0">
+                        {isSubmitting || isUploading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
+                      </button>
+                      <button type="button" onClick={handleDone} disabled={isSubmitting || isUploading} className="bg-transparent border-2 border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#0B0B0C] font-bold px-3 sm:px-6 rounded-xl transition-colors disabled:opacity-50 shrink-0">Done</button>
                     </form>
                   </div>
                 ) : (
@@ -390,7 +413,6 @@ function DebateRoomContent() {
                 )
               )}
 
-              {/* If Spectator or Judge */}
               {(!isPlayerA && !isPlayerB) && (
                 <div className="text-center p-3 text-[#9A968A] bg-[#1C1C1F] rounded-xl border border-[#2A2A2E]">
                   You are observing this debate as {isJudge ? 'the Judge' : 'a spectator'}.
@@ -399,7 +421,6 @@ function DebateRoomContent() {
             </>
           )}
 
-          {/* JUDGING PHASE */}
           {debate.status === 'judging' && (
             isJudge ? (
               <form onSubmit={handleSubmitVerdict} className="bg-[#1C1C1F] p-6 rounded-xl border border-[#D4AF37] space-y-4">
@@ -431,8 +452,21 @@ function DebateRoomContent() {
                 </button>
               </form>
             ) : (
-              <div className="text-center p-6 bg-[#1C1C1F] rounded-xl border border-[#D4AF37]/50 text-[#D4AF37] animate-pulse">
-                The debate has ended. Waiting for the Human Judge to deliver their verdict...
+              <div className="text-center p-6 bg-[#1C1C1F] rounded-xl border border-[#D4AF37]/50 text-[#D4AF37] flex flex-col items-center gap-4">
+                <p>The debate has ended. Waiting for the Human Judge to deliver their verdict...</p>
+                
+                {(isPlayerA || isPlayerB) && (
+                  <button 
+                    onClick={async () => {
+                      if(window.confirm("Is the judge missing? Click OK to kick them and have the AI judge instead.")) {
+                        await fetch(`/api/debates/${debateId}/force-judge`, { method: 'POST' })
+                      }
+                    }}
+                    className="bg-[#0B0B0C] border border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#0B0B0C] px-4 py-2 rounded-lg text-sm transition-colors"
+                  >
+                    Force AI Judging
+                  </button>
+                )}
               </div>
             )
           )}

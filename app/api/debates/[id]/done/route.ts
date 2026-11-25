@@ -1,47 +1,47 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: debateId } = await params
   const supabase = await createServerClient()
+
+  // 1. Get the current user
   const { data: { user } } = await supabase.auth.getUser()
-  const { id } = await params
-  
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // 1. Get the debate to see who is A and who is B
-  const { data: debate } = await supabase.from('debates').select('*').eq('id', id).single()
+  // 2. Fetch the current debate
+  const { data: debate } = await supabase.from('debates').select('*').eq('id', debateId).single()
   if (!debate) return NextResponse.json({ error: 'Debate not found' }, { status: 404 })
 
+  // 3. Mark this user as done
   const isPlayerA = user.id === debate.player_a
-  const isPlayerB = user.id === debate.player_b
+  const updateField = isPlayerA ? 'player_a_done' : 'player_b_done'
   
-  if (!isPlayerA && !isPlayerB) return NextResponse.json({ error: 'You are not in this debate' }, { status: 403 })
+  await supabase.from('debates').update({ [updateField]: true }).eq('id', debateId)
 
-  // 2. Update the correct player's "done" status
-  const updates = isPlayerA ? { player_a_done: true } : { player_b_done: true }
+  // 4. Fetch the updated debate to check if BOTH are done
+  const { data: updatedDebate } = await supabase.from('debates').select('*').eq('id', debateId).single()
 
-  const { data: updatedDebate, error } = await supabase.from('debates')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single()
+  if (updatedDebate?.player_a_done && updatedDebate?.player_b_done) {
+    // BOTH ARE DONE! Change status to judging
+    await supabase.from('debates').update({ status: 'judging' }).eq('id', debateId)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-
-  // 3. Check if BOTH players are now done
- 
-  if (updatedDebate.player_a_done && updatedDebate.player_b_done) {
-    if (updatedDebate.judge_id) {
-      // A human judge is assigned. Just set status to judging and wait for them.
-      await supabase.from('debates').update({ status: 'judging' }).eq('id', id)
-    } else {
-      // No human judge. Trigger the AI.
-      fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/judge`, {
+    // Trigger the AI Judge (if there isn't a human judge assigned)
+    if (!updatedDebate.judge_id) {
+      // THIS IS THE FIX: It automatically grabs the URL (localhost or Vercel)
+      const origin = req.headers.get('origin') || new URL(req.url).origin;
+      
+      // We don't await this so the UI responds instantly to the user
+      fetch(`${origin}/api/judge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ debate_id: id })
-      }).catch(() => {})
+        body: JSON.stringify({ debate_id: debateId })
+      }).catch(err => console.error("Failed to trigger AI:", err))
     }
   }
-  return NextResponse.json(updatedDebate)
+
+  return NextResponse.json({ success: true })
 }
