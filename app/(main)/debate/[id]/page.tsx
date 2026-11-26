@@ -48,7 +48,6 @@ function DebateRoomContent() {
     const { data: debateData } = await supabase().from('debates').select('*, topics(title, side_a_label, side_b_label)').eq('id', debateId).single()
     if (debateData) { setDebate(debateData); setTopic(debateData.topics) }
 
-    // CHANGED: Order by created_at since turn_number is gone
     const { data: turnsData } = await supabase().from('turns').select('*').eq('debate_id', debateId).order('created_at', { ascending: true })
     if (turnsData) setTurns(turnsData)
 
@@ -60,7 +59,7 @@ function DebateRoomContent() {
 
   useEffect(() => {
     fetchDebate()
-    setCurrentUrl(window.location.href.split('?')[0]) // Get base URL without query params
+    setCurrentUrl(window.location.href.split('?')[0]) 
 
     const channel = supabase().channel(`room:${debateId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'turns', filter: `debate_id=eq.${debateId}` }, (payload) => { setTurns((prev) => [...prev, payload.new]) })
@@ -72,7 +71,6 @@ function DebateRoomContent() {
     return () => { supabase().removeChannel(channel) }
   }, [debateId])
 
-  // Fetch user profiles for avatars
   useEffect(() => {
     if (debate?.player_a && debate?.player_b) {
       const fetchProfiles = async () => {
@@ -91,7 +89,6 @@ function DebateRoomContent() {
     }
   }, [debate?.player_a, debate?.player_b])
 
-  // Timer logic
   useEffect(() => {
     if (!debate?.deadline || debate.status !== 'live') return
     const interval = setInterval(() => {
@@ -154,7 +151,6 @@ function DebateRoomContent() {
         setIsUploading(false)
       }
 
-      // CHANGED: Removed turn_number completely
       const res = await fetch(`/api/debates/${debateId}/turns`, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
@@ -204,6 +200,15 @@ function DebateRoomContent() {
     setIsSubmittingVerdict(false)
   }
 
+  // NEW: Handle leaving the room safely
+  const handleLeave = async () => {
+    // If the debate hasn't started yet, mark it as abandoned
+    if (debate?.status === 'waiting') {
+      await fetch(`/api/debates/${debateId}/leave`, { method: 'POST' })
+    }
+    router.push('/topics')
+  }
+
   if (loading) return <div className="p-8 text-center text-[var(--color-text)] min-h-screen bg-[var(--color-bg)]">Loading room...</div>
   if (!debate) return <div className="p-8 text-center text-[var(--color-con)] min-h-screen bg-[var(--color-bg)]">Debate not found.</div>
 
@@ -218,7 +223,6 @@ function DebateRoomContent() {
   const myStance = isPlayerA ? debate.stance_a : (debate.stance_a === 'pro' ? 'con' : 'pro')
   const myStanceLabel = myStance === 'pro' ? (topic?.side_a_label || 'Pro') : (topic?.side_b_label || 'Con')
   
-  // Dynamic Styles
   const myColorClass = myStance === 'pro' 
     ? 'text-[var(--color-pro)] bg-[var(--color-pro)]/20 border-[var(--color-pro)]/30' 
     : 'text-[var(--color-con)] bg-[var(--color-con)]/20 border-[var(--color-con)]/30'
@@ -231,7 +235,6 @@ function DebateRoomContent() {
           <h1 className="text-3xl font-serif font-extrabold mb-3 text-[var(--color-text)]">Topic: {topic?.title}</h1>
           {!isSpectator && <p className="text-[var(--color-text-muted)] mb-8">You are arguing <span className={`font-bold px-2 py-1 rounded-md border ${myColorClass}`}>{myStanceLabel}</span></p>}
           
-          {/* CRITICAL FIX: Ensure players cannot accidentally become judges even if they open the judge link */}
           {isSpectator && isJudgeInvite ? (
              <div className="bg-[var(--color-bg)] p-6 rounded-lg border border-[var(--color-gold)] mb-8">
                 <Gavel className="mx-auto text-[var(--color-gold)] mb-4" size={48} />
@@ -263,7 +266,8 @@ function DebateRoomContent() {
               <p className="text-lg font-medium text-[var(--color-gold)]">Finding an Opponent...</p>
             </div>
           )}
-          <button onClick={() => router.push('/topics')} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors py-3">Leave</button>
+          {/* UPDATED: Use handleLeave to clean up the room */}
+          <button onClick={handleLeave} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors py-3">Leave</button>
         </div>
       </div>
     )

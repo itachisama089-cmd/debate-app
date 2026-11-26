@@ -10,24 +10,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // 2. Check if the user is ALREADY in an active debate (Duplicate room fix)
+  // 2. Check if user is in a LIVE or JUDGING debate (must finish these first)
   const { data: activeDebate, error: findError } = await supabase
     .from('debates')
     .select('*')
     .or(`player_a.eq.${user.id},player_b.eq.${user.id}`)
-    .in('status', ['waiting', 'live', 'judging'])
+    .in('status', ['live', 'judging'])
     .maybeSingle()
 
   if (findError) {
     return NextResponse.json({ error: findError.message }, { status: 500 })
   }
 
-  // If they are already in a room, return it and don't create a new one
   if (activeDebate) {
     return NextResponse.json(activeDebate)
   }
 
-  // 3. They are not in a room. Let's find them a match.
+  // 3. Get the requested topic details
   try {
     const body = await req.json()
     const { topic_id, is_private, stance_a } = body
@@ -36,7 +35,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing topic_id or stance_a' }, { status: 400 })
     }
 
-    // MATCHMAKING LOGIC: If it's a public debate, look for an opponent waiting with the OPPOSITE stance
+    // 4. Check if user is ALREADY WAITING for THIS EXACT topic
+    const { data: waitingDebate } = await supabase
+      .from('debates')
+      .select('*')
+      .or(`player_a.eq.${user.id},player_b.eq.${user.id}`)
+      .eq('status', 'waiting')
+      .eq('topic_id', topic_id)
+      .maybeSingle()
+
+    if (waitingDebate) {
+      return NextResponse.json(waitingDebate)
+    }
+
+    // 5. If they are waiting for a DIFFERENT topic, abandon the old room to prevent ghosting
+    await supabase
+      .from('debates')
+      .update({ status: 'abandoned' })
+      .or(`player_a.eq.${user.id},player_b.eq.${user.id}`)
+      .eq('status', 'waiting')
+
+    // 6. MATCHMAKING: Look for an opponent waiting with the OPPOSITE stance
     if (!is_private) {
       const opponentStance = stance_a === 'pro' ? 'con' : 'pro';
       
@@ -46,7 +65,7 @@ export async function POST(req: Request) {
         .eq('topic_id', topic_id)
         .eq('is_private', false)
         .eq('status', 'waiting')
-        .eq('stance_a', opponentStance) // They chose the opposite of what I'm choosing
+        .eq('stance_a', opponentStance)
         .is('player_b', null)
         .limit(1)
         .maybeSingle();
@@ -69,7 +88,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 4. If no opponent was found (or it's a private room), create a new room and wait
+    // 7. If no opponent was found, create a new room and wait
     const { data: newDebate, error: createError } = await supabase
       .from('debates')
       .insert({
