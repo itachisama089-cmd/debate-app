@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { admin } from '@/lib/supabase/admin'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -16,7 +17,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const deadline = new Date(Date.now() + 60 * 60 * 1000).toISOString()
 
     // 3. Attempt to update the debate and join as player_b
-    const { data, error } = await supabase
+    const { data: debate, error } = await supabase
       .from('debates')
       .update({
         player_b: user.id,
@@ -30,37 +31,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       .select()
       .single()
 
-    // 4. Handle Database Errors
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
-    }
-
-    // 5. Handle Race Conditions (If another player joined a split second before you)
-    if (!data) {
+    // 4. Handle Database Errors (Race conditions or invalid debate)
+    if (error || !debate) {
       return NextResponse.json(
         { error: 'Debate is no longer available or you cannot join this debate' }, 
         { status: 409 } // 409 Conflict
       )
     }
 
-    // 6. Notify Player A that someone joined
-    const { error: notifError } = await supabase
+    // 5. Notify Player A that someone joined (Using Admin client to bypass RLS)
+    const { error: notifError } = await admin
       .from('notifications')
       .insert({
-        user_id: data.player_a, // FIXED: Using 'data' instead of undefined 'debate'
+        user_id: debate.player_a, 
         title: 'Opponent Joined!',
-        message: 'Someone accepted your debate challenge. The debate is now live.',
+        message: 'Someone accepted your challenge. The parley is now live.',
         link: `/debate/${id}`
       })
 
-    // Log notification error, but don't fail the request since the join was successful
+    // Log notification error, but don't fail the join request
     if (notifError) {
       console.error('Failed to create notification:', notifError)
     }
 
-    return NextResponse.json(data)
+    return NextResponse.json(debate)
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Server Error:', error)
     return NextResponse.json(
       { error: 'Internal Server Error' }, 

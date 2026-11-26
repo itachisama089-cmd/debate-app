@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Send, Scale, Clock, CheckCircle, Loader2, Image as ImageIcon, X, Gavel, UserCheck, Copy } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 
 function DebateRoomContent() {
   const params = useParams()
@@ -23,14 +24,17 @@ function DebateRoomContent() {
   
   const [profiles, setProfiles] = useState<Record<string, any>>({})
   
+  // Chat State
   const [message, setMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   
+  // Image Upload State
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Human Judge State
   const [isSubmittingVerdict, setIsSubmittingVerdict] = useState(false)
   const [winnerSelection, setWinnerSelection] = useState<'player_a' | 'player_b' | 'draw'>('player_a')
   const [judgeRationale, setJudgeRationale] = useState('')
@@ -44,7 +48,8 @@ function DebateRoomContent() {
     const { data: debateData } = await supabase().from('debates').select('*, topics(title, side_a_label, side_b_label)').eq('id', debateId).single()
     if (debateData) { setDebate(debateData); setTopic(debateData.topics) }
 
-    const { data: turnsData } = await supabase().from('turns').select('*').eq('debate_id', debateId).order('created_at', { ascending: true })
+    // Order by turn_number to ensure chat flows correctly
+    const { data: turnsData } = await supabase().from('turns').select('*').eq('debate_id', debateId).order('turn_number', { ascending: true })
     if (turnsData) setTurns(turnsData)
 
     const { data: judgeData } = await supabase().from('judgments').select('*').eq('debate_id', debateId).single()
@@ -67,6 +72,7 @@ function DebateRoomContent() {
     return () => { supabase().removeChannel(channel) }
   }, [debateId])
 
+  // Fetch user profiles for avatars
   useEffect(() => {
     if (debate?.player_a && debate?.player_b) {
       const fetchProfiles = async () => {
@@ -85,6 +91,7 @@ function DebateRoomContent() {
     }
   }, [debate?.player_a, debate?.player_b])
 
+  // Timer logic
   useEffect(() => {
     if (!debate?.deadline || debate.status !== 'live') return
     const interval = setInterval(() => {
@@ -147,9 +154,17 @@ function DebateRoomContent() {
         setIsUploading(false)
       }
 
+      // We calculate the next turn number based on how many messages already exist
+      const nextTurnNumber = turns.length + 1
+
       const res = await fetch(`/api/debates/${debateId}/turns`, { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ content: message || "[Image sent]", image_url: uploadedImageUrl }) 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ 
+          content: message || "[Image sent]", 
+          image_url: uploadedImageUrl,
+          turn_number: nextTurnNumber
+        }) 
       })
       
       if (res.ok) { setMessage(''); clearImage() } 
@@ -192,8 +207,8 @@ function DebateRoomContent() {
     setIsSubmittingVerdict(false)
   }
 
-  if (loading) return <div className="p-8 text-center text-[#F2EFE6] min-h-screen bg-[#0B0B0C]">Loading room...</div>
-  if (!debate) return <div className="p-8 text-center text-[#D9534F] min-h-screen bg-[#0B0B0C]">Debate not found.</div>
+  if (loading) return <div className="p-8 text-center text-[var(--color-text)] min-h-screen bg-[var(--color-bg)]">Loading room...</div>
+  if (!debate) return <div className="p-8 text-center text-[var(--color-con)] min-h-screen bg-[var(--color-bg)]">Debate not found.</div>
 
   const isPlayerA = userId === debate.player_a
   const isPlayerB = userId === debate.player_b
@@ -203,58 +218,54 @@ function DebateRoomContent() {
   const myDoneStatus = isPlayerA ? debate.player_a_done : debate.player_b_done
   const canChat = debate.status === 'live' && !myDoneStatus
   
-  const proColor = 'text-[#A3B18A]'
-  const proBg = 'bg-[#A3B18A]/20 border-[#A3B18A]/30'
-  const conColor = 'text-[#BC4749]'
-  const conBg = 'bg-[#BC4749]/20 border-[#BC4749]/30'
-
   const myStance = isPlayerA ? debate.stance_a : (debate.stance_a === 'pro' ? 'con' : 'pro')
   const myStanceLabel = myStance === 'pro' ? (topic?.side_a_label || 'Pro') : (topic?.side_b_label || 'Con')
-  const myColorClass = myStance === 'pro' ? `${proColor} ${proBg}` : `${conColor} ${conBg}`
+  
+  // Dynamic Styles
+  const myColorClass = myStance === 'pro' 
+    ? 'text-[var(--color-pro)] bg-[var(--color-pro)]/20 border-[var(--color-pro)]/30' 
+    : 'text-[var(--color-con)] bg-[var(--color-con)]/20 border-[var(--color-con)]/30'
 
   // 1. WAITING ROOM
   if (debate.status === 'waiting') {
     return (
-      <div className="min-h-screen bg-[#0B0B0C] p-8 flex flex-col items-center justify-center text-[#F2EFE6]">
-        <div className="max-w-2xl w-full bg-[#141416] p-10 rounded-xl border border-[#2A2A2E] text-center">
-          <h1 className="text-3xl font-extrabold mb-3 text-[#F2EFE6]">Topic: {topic?.title}</h1>
-          {!isSpectator && <p className="text-[#9A968A] mb-8">You are arguing <span className={`font-bold px-2 py-1 rounded-md ${myColorClass}`}>{myStanceLabel}</span></p>}
+      <div className="min-h-screen bg-[var(--color-bg)] p-8 flex flex-col items-center justify-center text-[var(--color-text)]">
+        <div className="max-w-2xl w-full bg-[var(--color-surface)] p-10 rounded-xl border border-[var(--color-border)] text-center">
+          <h1 className="text-3xl font-serif font-extrabold mb-3 text-[var(--color-text)]">Topic: {topic?.title}</h1>
+          {!isSpectator && <p className="text-[var(--color-text-muted)] mb-8">You are arguing <span className={`font-bold px-2 py-1 rounded-md border ${myColorClass}`}>{myStanceLabel}</span></p>}
           
           {isSpectator && isJudgeInvite ? (
-             <div className="bg-[#0B0B0C] p-6 rounded-lg border border-[#D4AF37] mb-8">
-                <Gavel className="mx-auto text-[#D4AF37] mb-4" size={48} />
-                <p className="text-lg font-medium mb-4 text-[#D4AF37]">You have been invited to Judge!</p>
-                <button onClick={handleBecomeJudge} className="mt-2 bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] font-bold py-3 px-8 rounded-lg transition-colors">Accept Judge Role</button>
+             <div className="bg-[var(--color-bg)] p-6 rounded-lg border border-[var(--color-gold)] mb-8">
+                <Gavel className="mx-auto text-[var(--color-gold)] mb-4" size={48} />
+                <p className="text-lg font-medium mb-4 text-[var(--color-gold)]">You have been invited to Judge!</p>
+                <Button onClick={handleBecomeJudge}>Accept Judge Role</Button>
              </div>
           ) : debate.is_private ? (
             isPlayerA ? (
-              <div className="bg-[#0B0B0C] p-6 rounded-lg border border-[#D4AF37] mb-8 w-full">
-                <p className="text-lg font-medium mb-4 text-[#D4AF37]">Waiting for opponent...</p>
+              <div className="bg-[var(--color-bg)] p-6 rounded-lg border border-[var(--color-gold)] mb-8 w-full">
+                <p className="text-lg font-medium mb-4 text-[var(--color-gold)]">Waiting for opponent...</p>
                 <div className="flex flex-col sm:flex-row items-center gap-2">
-                  <code className="block bg-[#1C1C1F] p-3 rounded-lg text-sm text-[#F2EFE6] w-full truncate border border-[#2A2A2E]">
+                  <code className="block bg-[var(--color-surface-raised)] p-3 rounded-lg text-sm text-[var(--color-text)] w-full truncate border border-[var(--color-border)]">
                     {currentUrl}
                   </code>
-                  <button 
-                    onClick={() => copyToClipboard(currentUrl, "Opponent invite")} 
-                    className="flex items-center gap-2 bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] font-bold py-3 px-6 rounded-lg transition-colors whitespace-nowrap w-full sm:w-auto justify-center"
-                  >
+                  <Button onClick={() => copyToClipboard(currentUrl, "Opponent invite")} className="w-full sm:w-auto flex gap-2">
                     <Copy size={18} /> Copy Link
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <div className="bg-[#0B0B0C] p-6 rounded-lg border border-[#D4AF37] mb-8">
-                <p className="text-lg font-medium mb-4 text-[#D4AF37]">You have been invited to a private debate!</p>
-                <button onClick={handleJoin} className="mt-2 bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] font-bold py-3 px-8 rounded-lg transition-colors">Join Debate</button>
+              <div className="bg-[var(--color-bg)] p-6 rounded-lg border border-[var(--color-gold)] mb-8">
+                <p className="text-lg font-medium mb-4 text-[var(--color-gold)]">You have been invited to a private debate!</p>
+                <Button onClick={handleJoin}>Join Debate</Button>
               </div>
             )
           ) : (
-            <div className="flex flex-col items-center mb-8 bg-[#0B0B0C] p-6 rounded-lg border border-[#2A2A2E]">
-              <Loader2 className="text-[#D4AF37] animate-spin mb-4" size={48} />
-              <p className="text-lg font-medium text-[#D4AF37]">Finding an Opponent...</p>
+            <div className="flex flex-col items-center mb-8 bg-[var(--color-bg)] p-6 rounded-lg border border-[var(--color-border)]">
+              <Loader2 className="text-[var(--color-gold)] animate-spin mb-4" size={48} />
+              <p className="text-lg font-medium text-[var(--color-gold)]">Finding an Opponent...</p>
             </div>
           )}
-          <button onClick={() => router.push('/topics')} className="text-[#9A968A] hover:text-[#F2EFE6] transition-colors py-3">Leave</button>
+          <button onClick={() => router.push('/topics')} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors py-3">Leave</button>
         </div>
       </div>
     )
@@ -266,18 +277,20 @@ function DebateRoomContent() {
     const isDraw = judgment.winner_id === null
     
     return (
-      <div className="min-h-screen bg-[#0B0B0C] p-8 flex flex-col items-center justify-center text-[#F2EFE6]">
-        <div className="max-w-2xl w-full bg-[#141416] p-8 rounded-xl border border-[#2A2A2E] shadow-2xl">
+      <div className="min-h-screen bg-[var(--color-bg)] p-8 flex flex-col items-center justify-center text-[var(--color-text)]">
+        <div className="max-w-2xl w-full bg-[var(--color-surface)] p-8 rounded-xl border border-[var(--color-border)] shadow-2xl">
           <div className="text-center mb-8">
-            <Scale className="mx-auto text-[#D4AF37] mb-4" size={48} />
-            <h1 className="text-3xl font-extrabold mb-2">Debate Concluded</h1>
-            <p className="text-[#9A968A]">Judged by: {judgment.judge_type === 'human' ? 'Third Party' : 'AI'}</p>
+            <Scale className="mx-auto text-[var(--color-gold)] mb-4" size={48} />
+            <h1 className="text-3xl font-serif font-extrabold mb-2">Debate Concluded</h1>
+            <p className="text-[var(--color-text-muted)]">Judged by: {judgment.judge_type === 'human' ? 'Third Party' : 'AI'}</p>
           </div>
-          <div className={`p-6 rounded-xl text-center mb-8 border ${isDraw ? 'bg-[#1C1C1F] border-[#2A2A2E]' : iWon ? 'bg-[#A3B18A]/10 border-[#A3B18A]/50' : 'bg-[#BC4749]/10 border-[#BC4749]/50'}`}>
-            <h2 className="text-2xl font-bold mb-2">{isDraw ? "It's a Draw / Void!" : iWon ? "You Won! 🏆" : "You Lost"}</h2>
-            <p className="text-[#F2EFE6] text-sm whitespace-pre-wrap">{judgment.rationale}</p>
+          <div className={`p-6 rounded-xl text-center mb-8 border ${isDraw ? 'bg-[var(--color-surface-raised)] border-[var(--color-border)]' : iWon ? 'bg-[var(--color-pro)]/10 border-[var(--color-pro)]/50' : 'bg-[var(--color-con)]/10 border-[var(--color-con)]/50'}`}>
+            <h2 className={`text-2xl font-bold mb-2 ${isDraw ? 'text-[var(--color-text)]' : iWon ? 'text-[var(--color-pro)]' : 'text-[var(--color-con)]'}`}>
+              {isDraw ? "It's a Draw / Void!" : iWon ? "You Won! 🏆" : "You Lost"}
+            </h2>
+            <p className="text-[var(--color-text)] text-sm whitespace-pre-wrap">{judgment.rationale}</p>
           </div>
-          <button onClick={() => router.push('/topics')} className="w-full bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] font-bold py-3 rounded-lg transition-colors">Back to Topics</button>
+          <Button onClick={() => router.push('/topics')} className="w-full">Back to Topics</Button>
         </div>
       </div>
     )
@@ -285,31 +298,31 @@ function DebateRoomContent() {
 
   // 3. LIVE CHAT / JUDGING SCREEN
   return (
-    <div className="min-h-screen bg-[#0B0B0C] p-2 sm:p-4 md:p-8 flex flex-col items-center overflow-hidden">
-      <div className="max-w-4xl w-full bg-[#141416] rounded-xl border border-[#2A2A2E] flex flex-col h-[90vh] md:h-[85vh] overflow-hidden">
+    <div className="min-h-screen bg-[var(--color-bg)] p-2 sm:p-4 md:p-8 flex flex-col items-center overflow-hidden">
+      <div className="max-w-4xl w-full bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] flex flex-col h-[90vh] md:h-[85vh] overflow-hidden">
         
         {/* Header */}
-        <div className="p-4 sm:p-6 border-b border-[#2A2A2E] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#0B0B0C] rounded-t-xl">
+        <div className="p-4 sm:p-6 border-b border-[var(--color-border)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[var(--color-bg)] rounded-t-xl">
           <div>
             <div className="flex items-center gap-4">
-              <span className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-full ${debate.status === 'live' ? 'text-[#A3B18A] bg-[#A3B18A]/10' : 'text-[#D4AF37] bg-[#D4AF37]/10'}`}>
+              <span className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-full ${debate.status === 'live' ? 'text-[var(--color-pro)] bg-[var(--color-pro)]/10' : 'text-[var(--color-gold)] bg-[var(--color-gold)]/10'}`}>
                 {debate.status === 'judging' ? 'Awaiting Verdict' : debate.status}
               </span>
               {debate.status === 'live' && (
-                <span className="flex items-center gap-1 text-sm text-[#D4AF37] font-mono bg-[#1C1C1F] px-3 py-1 rounded-full border border-[#2A2A2E]"><Clock size={14} /> {timeLeft}</span>
+                <span className="flex items-center gap-1 text-sm text-[var(--color-gold)] font-mono bg-[var(--color-surface-raised)] px-3 py-1 rounded-full border border-[var(--color-border)]"><Clock size={14} /> {timeLeft}</span>
               )}
             </div>
-            <h1 className="text-2xl font-extrabold text-[#F2EFE6] mt-2">Topic: {topic?.title}</h1>
+            <h1 className="text-xl sm:text-2xl font-serif font-extrabold text-[var(--color-text)] mt-2">Topic: {topic?.title}</h1>
           </div>
           <div className="text-right">
-            {isJudge && <span className="flex items-center gap-1 text-[#D4AF37] font-bold text-sm bg-[#D4AF37]/10 px-3 py-1 rounded-full mb-2"><Gavel size={14} /> You are the Judge</span>}
-            {!isJudge && debate.judge_id && <span className="flex items-center gap-1 text-[#9A968A] text-sm mb-2"><UserCheck size={14} /> Human Judge Assigned</span>}
-            <button onClick={() => router.push('/topics')} className="block text-[#9A968A] hover:text-[#F2EFE6] text-sm ml-auto">Leave Room</button>
+            {isJudge && <span className="flex items-center gap-1 text-[var(--color-gold)] font-bold text-sm bg-[var(--color-gold)]/10 px-3 py-1 rounded-full mb-2"><Gavel size={14} /> You are the Judge</span>}
+            {!isJudge && debate.judge_id && <span className="flex items-center gap-1 text-[var(--color-text-muted)] text-sm mb-2"><UserCheck size={14} /> Human Judge Assigned</span>}
+            <button onClick={() => router.push('/topics')} className="block text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-sm ml-auto">Leave Room</button>
           </div>
         </div>
 
         {/* Chat Area */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {turns.map((turn) => {
             const isMe = turn.user_id === userId
             const profile = profiles[turn.user_id]
@@ -320,21 +333,17 @@ function DebateRoomContent() {
             return (
               <div key={turn.id} className={`flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`}>
                 {!isMe && (
-                  <div className="w-8 h-8 rounded-full overflow-hidden mr-2 flex-shrink-0 bg-[#2A2A2E] flex items-center justify-center text-xs font-bold text-[#9A968A]">
-                    {avatarUrl ? (
-                      <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
-                    ) : (
-                      username.charAt(0).toUpperCase()
-                    )}
+                  <div className="w-8 h-8 rounded-full overflow-hidden mr-2 flex-shrink-0 bg-[var(--color-surface-raised)] flex items-center justify-center text-xs font-bold text-[var(--color-text-muted)] border border-[var(--color-border)]">
+                    {avatarUrl ? <img src={avatarUrl} alt={username} className="w-full h-full object-cover" /> : username.charAt(0).toUpperCase()}
                   </div>
                 )}
 
-                <div className={`max-w-[75%] p-4 rounded-2xl ${
+                <div className={`max-w-[80%] p-4 rounded-2xl ${
                   isMe 
-                    ? 'bg-[#D4AF37] text-[#0B0B0C] rounded-tr-sm font-medium' 
-                    : 'bg-[#1C1C1F] text-[#F2EFE6] rounded-tl-sm border border-[#2A2A2E]'
+                    ? 'bg-[var(--color-gold)] text-[var(--color-bg)] rounded-tr-sm font-medium' 
+                    : 'bg-[var(--color-surface-raised)] text-[var(--color-text)] rounded-tl-sm border border-[var(--color-border)]'
                 }`}>
-                  {!isMe && <p className="text-xs font-semibold mb-1 text-[#9A968A]">{username}</p>}
+                  {!isMe && <p className="text-xs font-semibold mb-1 opacity-70">{username}</p>}
                   
                   {turn.image_url && (
                     <img src={turn.image_url} alt="Attachment" className="max-w-full rounded-lg mb-2 border border-black/20" />
@@ -345,12 +354,8 @@ function DebateRoomContent() {
                 </div>
 
                 {isMe && (
-                  <div className="w-8 h-8 rounded-full overflow-hidden ml-2 flex-shrink-0 bg-[#2A2A2E] flex items-center justify-center text-xs font-bold text-[#9A968A]">
-                    {avatarUrl ? (
-                      <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
-                    ) : (
-                      username.charAt(0).toUpperCase()
-                    )}
+                  <div className="w-8 h-8 rounded-full overflow-hidden ml-2 flex-shrink-0 bg-[var(--color-surface-raised)] flex items-center justify-center text-xs font-bold text-[var(--color-text-muted)] border border-[var(--color-border)]">
+                    {avatarUrl ? <img src={avatarUrl} alt={username} className="w-full h-full object-cover" /> : username.charAt(0).toUpperCase()}
                   </div>
                 )}
               </div>
@@ -360,61 +365,62 @@ function DebateRoomContent() {
         </div>
 
         {/* Action Area */}
-        <div className="p-4 border-t border-[#2A2A2E] bg-[#0B0B0C] rounded-b-xl flex flex-col gap-3">
+        <div className="p-4 border-t border-[var(--color-border)] bg-[var(--color-bg)] rounded-b-xl flex flex-col gap-3">
           
           {debate.status === 'live' && (
             <>
               {!debate.judge_id && (isPlayerA || isPlayerB) && (
-                <div className="p-3 text-[#D4AF37] bg-[#1C1C1F] rounded-xl border border-[#2A2A2E] flex flex-col sm:flex-row justify-between items-center gap-2 w-full overflow-hidden">
+                <div className="p-3 text-[var(--color-gold)] bg-[var(--color-surface-raised)] rounded-xl border border-[var(--color-border)] flex flex-col sm:flex-row justify-between items-center gap-2 w-full overflow-hidden">
                   <span className="text-sm whitespace-nowrap font-bold">Invite a Human Judge:</span>
                   <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-                    <code className="text-xs bg-[#0B0B0C] p-2 rounded border border-[#2A2A2E] w-full sm:max-w-[200px] truncate">
+                    <code className="text-xs bg-[var(--color-bg)] p-2 rounded border border-[var(--color-border)] w-full sm:max-w-[200px] truncate text-[var(--color-text-muted)]">
                       {currentUrl}?role=judge
                     </code>
-                    <button 
-                      onClick={() => copyToClipboard(`${currentUrl}?role=judge`, "Judge invite")} 
-                      className="flex items-center gap-2 bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] font-bold py-2 px-4 rounded text-sm transition-colors w-full sm:w-auto justify-center whitespace-nowrap"
-                    >
+                    <Button size="sm" onClick={() => copyToClipboard(`${currentUrl}?role=judge`, "Judge invite")} className="w-full sm:w-auto flex items-center gap-2">
                       <Copy size={16} /> Copy Link
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
 
               {(isPlayerA || isPlayerB) && (
                 myDoneStatus ? (
-                  <div className="text-center p-3 text-[#A3B18A] bg-[#A3B18A]/10 border border-[#A3B18A]/20 rounded-xl flex items-center justify-center gap-2"><CheckCircle size={18} /> You have finished. Waiting for opponent...</div>
+                  <div className="text-center p-3 text-[var(--color-pro)] bg-[var(--color-pro)]/10 border border-[var(--color-pro)]/20 rounded-xl flex items-center justify-center gap-2 font-medium">
+                    <CheckCircle size={18} /> You have finished. Waiting for opponent...
+                  </div>
                 ) : canChat ? (
                   <div className="flex flex-col gap-2 w-full">
                     {imagePreview && (
                       <div className="relative inline-block w-32">
-                        <img src={imagePreview} alt="Preview" className="rounded-lg border border-[#2A2A2E]" />
-                        <button onClick={clearImage} className="absolute -top-2 -right-2 bg-[#BC4749] text-white rounded-full p-1 shadow-lg"><X size={14} /></button>
+                        <img src={imagePreview} alt="Preview" className="rounded-lg border border-[var(--color-border)]" />
+                        <button onClick={clearImage} className="absolute -top-2 -right-2 bg-[var(--color-con)] text-white rounded-full p-1 shadow-lg"><X size={14} /></button>
                       </div>
                     )}
                     <form onSubmit={handleSendMessage} className="flex gap-2 w-full">
                       <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageSelect} className="hidden" />
-                      <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-[#1C1C1F] border border-[#2A2A2E] hover:border-[#D4AF37] text-[#9A968A] hover:text-[#D4AF37] px-3 sm:px-4 rounded-xl flex items-center justify-center shrink-0">
+                      <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-[var(--color-surface-raised)] border border-[var(--color-border)] hover:border-[var(--color-gold)] text-[var(--color-text-muted)] hover:text-[var(--color-gold)] px-3 sm:px-4 rounded-xl flex items-center justify-center shrink-0 transition-colors">
                         <ImageIcon size={20} />
                       </button>
                       
-                      <input type="text" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Type your argument..." className="flex-1 min-w-0 bg-[#1C1C1F] text-[#F2EFE6] border border-[#2A2A2E] rounded-xl px-3 sm:px-4 py-3 focus:outline-none focus:border-[#D4AF37]" disabled={isSubmitting || isUploading} />
+                      <input type="text" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Type your argument..." className="flex-1 min-w-0 bg-[var(--color-surface-raised)] text-[var(--color-text)] border border-[var(--color-border)] rounded-xl px-3 sm:px-4 py-3 focus:outline-none focus:border-[var(--color-gold)]" disabled={isSubmitting || isUploading} />
                       
-                      <button type="submit" disabled={isSubmitting || isUploading || (!message.trim() && !selectedImage)} className="bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] px-3 sm:px-6 rounded-xl flex items-center justify-center disabled:opacity-50 shrink-0">
+                      <button type="submit" disabled={isSubmitting || isUploading || (!message.trim() && !selectedImage)} className="bg-[var(--color-gold)] hover:bg-[var(--color-gold-hover)] text-[var(--color-bg)] px-3 sm:px-6 rounded-xl flex items-center justify-center disabled:opacity-50 shrink-0 transition-colors">
                         {isSubmitting || isUploading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
                       </button>
-                      <button type="button" onClick={handleDone} disabled={isSubmitting || isUploading} className="bg-transparent border-2 border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#0B0B0C] font-bold px-3 sm:px-6 rounded-xl transition-colors disabled:opacity-50 shrink-0">Done</button>
+                      <button type="button" onClick={handleDone} disabled={isSubmitting || isUploading} className="bg-transparent border-2 border-[var(--color-gold)] text-[var(--color-gold)] hover:bg-[var(--color-gold)] hover:text-[var(--color-bg)] font-bold px-3 sm:px-6 rounded-xl transition-colors disabled:opacity-50 shrink-0">
+                        Done
+                      </button>
                     </form>
                   </div>
                 ) : (
-                  <div className="text-center p-3 text-[#9A968A] bg-[#1C1C1F] rounded-xl border border-[#2A2A2E] flex justify-between items-center">
+                  <div className="text-center p-3 text-[var(--color-text-muted)] bg-[var(--color-surface-raised)] rounded-xl border border-[var(--color-border)]">
                     <span>Debate is not active.</span>
                   </div>
                 )
               )}
 
               {(!isPlayerA && !isPlayerB) && (
-                <div className="text-center p-3 text-[#9A968A] bg-[#1C1C1F] rounded-xl border border-[#2A2A2E]">
+                <div className="text-center p-3 text-[var(--color-text-muted)] bg-[var(--color-surface-raised)] rounded-xl border border-[var(--color-border)]">
                   You are observing this debate as {isJudge ? 'the Judge' : 'a spectator'}.
                 </div>
               )}
@@ -423,18 +429,18 @@ function DebateRoomContent() {
 
           {debate.status === 'judging' && (
             isJudge ? (
-              <form onSubmit={handleSubmitVerdict} className="bg-[#1C1C1F] p-6 rounded-xl border border-[#D4AF37] space-y-4">
-                <h3 className="text-xl font-bold text-[#D4AF37] flex items-center gap-2"><Gavel /> Deliver Your Verdict</h3>
-                <p className="text-sm text-[#9A968A]">The debate has ended. Please select the winner and provide your rationale.</p>
+              <form onSubmit={handleSubmitVerdict} className="bg-[var(--color-surface-raised)] p-6 rounded-xl border border-[var(--color-gold)] space-y-4">
+                <h3 className="text-xl font-bold text-[var(--color-gold)] flex items-center gap-2"><Gavel /> Deliver Your Verdict</h3>
+                <p className="text-sm text-[var(--color-text-muted)]">The debate has ended. Please select the winner and provide your rationale.</p>
                 
-                <div className="grid grid-cols-3 gap-2">
-                  <button type="button" onClick={() => setWinnerSelection('player_a')} className={`p-3 rounded-lg border text-center font-bold transition-all ${winnerSelection === 'player_a' ? 'bg-[#A3B18A] text-[#0B0B0C] border-[#A3B18A]' : 'bg-[#0B0B0C] text-[#9A968A] border-[#2A2A2E]'}`}>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <button type="button" onClick={() => setWinnerSelection('player_a')} className={`p-3 rounded-lg border text-center font-bold transition-all ${winnerSelection === 'player_a' ? 'bg-[var(--color-pro)] text-[var(--color-bg)] border-[var(--color-pro)]' : 'bg-[var(--color-bg)] text-[var(--color-text-muted)] border-[var(--color-border)]'}`}>
                     {profiles[debate.player_a]?.username || topic?.side_a_label || 'Player A'}
                   </button>
-                  <button type="button" onClick={() => setWinnerSelection('draw')} className={`p-3 rounded-lg border text-center font-bold transition-all ${winnerSelection === 'draw' ? 'bg-[#D4AF37] text-[#0B0B0C] border-[#D4AF37]' : 'bg-[#0B0B0C] text-[#9A968A] border-[#2A2A2E]'}`}>
+                  <button type="button" onClick={() => setWinnerSelection('draw')} className={`p-3 rounded-lg border text-center font-bold transition-all ${winnerSelection === 'draw' ? 'bg-[var(--color-gold)] text-[var(--color-bg)] border-[var(--color-gold)]' : 'bg-[var(--color-bg)] text-[var(--color-text-muted)] border-[var(--color-border)]'}`}>
                     Draw
                   </button>
-                  <button type="button" onClick={() => setWinnerSelection('player_b')} className={`p-3 rounded-lg border text-center font-bold transition-all ${winnerSelection === 'player_b' ? 'bg-[#BC4749] text-[#F2EFE6] border-[#BC4749]' : 'bg-[#0B0B0C] text-[#9A968A] border-[#2A2A2E]'}`}>
+                  <button type="button" onClick={() => setWinnerSelection('player_b')} className={`p-3 rounded-lg border text-center font-bold transition-all ${winnerSelection === 'player_b' ? 'bg-[var(--color-con)] text-[var(--color-text)] border-[var(--color-con)]' : 'bg-[var(--color-bg)] text-[var(--color-text-muted)] border-[var(--color-border)]'}`}>
                     {profiles[debate.player_b]?.username || topic?.side_b_label || 'Player B'}
                   </button>
                 </div>
@@ -443,29 +449,29 @@ function DebateRoomContent() {
                   value={judgeRationale} 
                   onChange={(e) => setJudgeRationale(e.target.value)}
                   placeholder="Explain why this side won..."
-                  className="w-full bg-[#0B0B0C] text-[#F2EFE6] border border-[#2A2A2E] rounded-xl p-3 h-24 focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-[var(--color-bg)] text-[var(--color-text)] border border-[var(--color-border)] rounded-xl p-3 h-24 focus:outline-none focus:border-[var(--color-gold)]"
                   required
                 />
 
-                <button type="submit" disabled={isSubmittingVerdict || !judgeRationale.trim()} className="w-full bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C] font-bold py-3 rounded-lg transition-colors disabled:opacity-50">
+                <Button type="submit" disabled={isSubmittingVerdict || !judgeRationale.trim()} className="w-full">
                   {isSubmittingVerdict ? 'Submitting...' : 'Declare Winner'}
-                </button>
+                </Button>
               </form>
             ) : (
-              <div className="text-center p-6 bg-[#1C1C1F] rounded-xl border border-[#D4AF37]/50 text-[#D4AF37] flex flex-col items-center gap-4">
+              <div className="text-center p-6 bg-[var(--color-surface-raised)] rounded-xl border border-[var(--color-gold)]/50 text-[var(--color-gold)] flex flex-col items-center gap-4">
                 <p>The debate has ended. Waiting for the Human Judge to deliver their verdict...</p>
                 
                 {(isPlayerA || isPlayerB) && (
-                  <button 
+                  <Button 
+                    variant="secondary"
                     onClick={async () => {
                       if(window.confirm("Is the judge missing? Click OK to kick them and have the AI judge instead.")) {
                         await fetch(`/api/debates/${debateId}/force-judge`, { method: 'POST' })
                       }
                     }}
-                    className="bg-[#0B0B0C] border border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#0B0B0C] px-4 py-2 rounded-lg text-sm transition-colors"
                   >
                     Force AI Judging
-                  </button>
+                  </Button>
                 )}
               </div>
             )
@@ -479,7 +485,7 @@ function DebateRoomContent() {
 
 export default function DebateRoom() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-[#F2EFE6] min-h-screen bg-[#0B0B0C]">Loading...</div>}>
+    <Suspense fallback={<div className="p-8 text-center text-[var(--color-text)] min-h-screen bg-[var(--color-bg)]">Loading...</div>}>
       <DebateRoomContent />
     </Suspense>
   )
