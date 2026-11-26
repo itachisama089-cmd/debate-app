@@ -7,16 +7,17 @@ export async function POST(req: Request) {
   
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { title, category, sideALabel, sideBLabel } = await req.json()
+  const { title, category, sideALabel, sideBLabel, image_url } = await req.json()
   
-  if (!title) return NextResponse.json({ error: 'Title is required' }, { status: 400 })
+  if (!title || !category) return NextResponse.json({ error: 'Title and category are required' }, { status: 400 })
 
   const { data, error } = await supabase.from('topics').insert({
     title,
     category,
     creator_id: user.id,
     side_a_label: sideALabel || 'Pro',
-    side_b_label: sideBLabel || 'Con'
+    side_b_label: sideBLabel || 'Con',
+    image_url: image_url // Save the uploaded image URL
   }).select().single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })

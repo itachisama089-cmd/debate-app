@@ -1,28 +1,38 @@
 @import "tailwindcss";
 
 @theme {
-  /* Backgrounds */
-  --color-bg:          #0B0B0C;
-  --color-surface:     #141416;
-  --color-surface-2:   #1C1C1F;
-  --color-border:      #2A2A2E;
+  /* Typography */
+  --font-serif: var(--font-fraunces), serif;
+  --font-sans: var(--font-inter), sans-serif;
 
-  /* Gold */
-  --color-gold:        #D4AF37;
-  --color-gold-hover:  #E6C458;
-  --color-gold-deep:   #A8841F;
+  /* Three Dark Levels */
+  --color-bg: #0B0B0C;            /* Page background */
+  --color-surface: #141416;       /* Sidebar, Cards */
+  --color-surface-raised: #1C1C1F;/* Inputs, Hover states */
+  --color-border: #2A2A2E;        /* Subtle borders */
 
   /* Text */
-  --color-text:        #F2EFE6;
-  --color-text-muted:  #9A968A;
-  --color-on-gold:     #0B0B0C;
+  --color-text: #F2EFE6;
+  --color-text-muted: #9A968A;
 
-  /* Debate sides */
-  --color-pro:         #3FA66B;
-  --color-con:         #D9534F;
+  /* Gold (Primary Actions) */
+  --color-gold: #D4AF37;
+  --color-gold-hover: #E6C458;
+  --color-gold-deep: #A8841F;
+
+  /* Debate Sides (Shared across all pages) */
+  --color-pro: #A3B18A;   /* Muted Sage Green */
+  --color-con: #BC4749;   /* Muted Ruby Red */
 }
 
+/* Base styles */
 body {
   background-color: var(--color-bg);
   color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-serif);
+  letter-spacing: -0.02em;
 }

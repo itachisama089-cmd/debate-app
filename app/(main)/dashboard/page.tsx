@@ -3,14 +3,17 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Swords, Trophy, ArrowRight, Plus, Loader2, Play } from 'lucide-react'
+import { Trophy, Flame, Swords, ArrowRight, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { Button } from '@/components/ui/Button'
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<any>(null)
-  const [activeDebates, setActiveDebates] = useState<any[]>([])
+  const [activeDebate, setActiveDebate] = useState<any>(null)
   const [stats, setStats] = useState({ wins: 0, total: 0 })
+  const [leaderboard, setLeaderboard] = useState<any[]>([])
+  const [trendingTopics, setTrendingTopics] = useState<any[]>([])
   const router = useRouter()
 
   useEffect(() => {
@@ -18,35 +21,22 @@ export default function Dashboard() {
       const { data: { user } } = await supabase().auth.getUser()
       if (!user) return router.push('/login')
 
+      // 1. Fetch User Profile
       const { data: profileData } = await supabase().from('profiles').select('*').eq('id', user.id).single()
       if (profileData) setProfile(profileData)
 
-      // Fetch ACTIVE debates
-      const { data: debatesData } = await supabase()
+      // 2. Fetch Active Debate (Prioritize Live, then Waiting)
+      const { data: activeData } = await supabase()
         .from('debates')
         .select('*, topics(title)')
         .or(`player_a.eq.${user.id},player_b.eq.${user.id}`)
-        .in('status', ['waiting', 'live'])
+        .in('status', ['live', 'waiting'])
         .order('created_at', { ascending: false })
+        .limit(1)
+      
+      if (activeData && activeData.length > 0) setActiveDebate(activeData[0])
 
-      if (debatesData) {
-        // We sort them so that "It's Your Turn" goes to the top, then we only keep the top 3
-        const sorted = debatesData.sort((a, b) => {
-          const aIsPlayerA = user.id === a.player_a
-          const aIsTurn = a.status === 'live' && ((aIsPlayerA && (a.current_turn || 1) % 2 !== 0) || (!aIsPlayerA && (a.current_turn || 1) % 2 === 0))
-          
-          const bIsPlayerA = user.id === b.player_a
-          const bIsTurn = b.status === 'live' && ((bIsPlayerA && (b.current_turn || 1) % 2 !== 0) || (!bIsPlayerA && (b.current_turn || 1) % 2 === 0))
-
-          if (aIsTurn && !bIsTurn) return -1
-          if (!aIsTurn && bIsTurn) return 1
-          return 0
-        })
-        
-        setActiveDebates(sorted.slice(0, 3)) // Only show top 3
-      }
-
-      // Fetch stats
+      // 3. Fetch Match Stats
       const { data: completedData } = await supabase()
         .from('debates')
         .select('id, judgments(winner_id)')
@@ -62,6 +52,32 @@ export default function Dashboard() {
         setStats({ wins, total: completedData.length })
       }
 
+      // 4. Fetch Top 5 Leaderboard
+      const { data: leaderboardData } = await supabase()
+        .from('profiles')
+        .select('id, username, points, avatar_url')
+        .order('points', { ascending: false })
+        .limit(5)
+      if (leaderboardData) setLeaderboard(leaderboardData)
+
+      // 5. Fetch Trending Topics
+      const { data: topicsData } = await supabase()
+        .from('topics')
+        .select('*, debates(count)')
+        .eq('active', true)
+        .order('created_at', { ascending: false })
+        .limit(3)
+      
+      if (topicsData) {
+        // Sort by debate count
+        const sorted = topicsData.sort((a: any, b: any) => {
+          const countA = a.debates?.[0]?.count || 0
+          const countB = b.debates?.[0]?.count || 0
+          return countB - countA
+        })
+        setTrendingTopics(sorted)
+      }
+
       setLoading(false)
     }
 
@@ -70,124 +86,170 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0B0B0C] text-[#D4AF37]">
-        <Loader2 className="animate-spin" size={48} />
+      <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)]">
+        <Loader2 className="animate-spin text-[var(--color-gold)]" size={48} />
       </div>
     )
   }
 
+  const winRate = stats.total > 0 ? Math.round((stats.wins / stats.total) * 100) : 0
+
   return (
-    <div className="min-h-screen bg-[#0B0B0C] p-8 text-[#F2EFE6]">
-      <div className="max-w-6xl mx-auto space-y-8">
-        
-               {/* Welcome Banner */}
-               <div className="bg-gradient-to-r from-[#141416] to-[#1C1C1F] p-6 md:p-8 rounded-2xl border border-[#2A2A2E] relative overflow-hidden flex justify-between items-center">
-          <div className="relative z-10 w-full md:w-2/3">
-            <h1 className="text-2xl md:text-4xl font-extrabold mb-2 text-[#F2EFE6] break-words leading-tight">
-              Welcome back, <br className="md:hidden" />
-              <span className="text-[#D4AF37]">{profile?.username}</span>
-            </h1>
-            <p className="text-[#9A968A] text-sm md:text-lg">Ready to defend your stance today?</p>
-          </div>
-          <Trophy className="absolute -right-4 -bottom-4 text-[#D4AF37] opacity-10 w-32 h-32 md:w-44 md:h-44" />
+    <div className="p-6 md:p-10 max-w-7xl mx-auto text-[var(--color-text)] min-h-screen">
+      
+      {/* Header & Stats Row */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
+        <div>
+          <h1 className="text-4xl md:text-5xl font-serif font-bold text-[var(--color-text)] mb-2">
+            Welcome back, <span className="text-[var(--color-gold)]">{profile?.username}</span>
+          </h1>
+          <p className="text-[var(--color-text-muted)] text-lg">Ready to defend your stance today?</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Quiet Stats */}
+        <div className="flex items-center gap-6 md:gap-8 bg-[var(--color-surface)] px-6 py-3 rounded-2xl border border-[var(--color-border)]">
+          <div className="text-center">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-bold mb-1">Points</p>
+            <p className="text-xl font-bold text-[var(--color-gold)]">{profile?.points || 0}</p>
+          </div>
+          <div className="w-px h-8 bg-[var(--color-border)]" />
+          <div className="text-center">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-bold mb-1">Wins</p>
+            <p className="text-xl font-bold text-[var(--color-pro)]">{stats.wins}</p>
+          </div>
+          <div className="w-px h-8 bg-[var(--color-border)]" />
+          <div className="text-center">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-bold mb-1">Win Rate</p>
+            <p className="text-xl font-bold text-[var(--color-text)]">{winRate}%</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* LEFT COLUMN */}
+        <div className="lg:col-span-2 space-y-10">
           
-          {/* LEFT COLUMN */}
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-[#141416] p-6 rounded-2xl border border-[#2A2A2E] flex flex-col justify-center">
-                <p className="text-sm text-[#9A968A] font-bold uppercase tracking-wider mb-1">Total Points</p>
-                <p className="text-3xl font-bold text-[#D4AF37]">{profile?.points || 0}</p>
-              </div>
-              <div className="bg-[#141416] p-6 rounded-2xl border border-[#2A2A2E] flex flex-col justify-center">
-                <p className="text-sm text-[#9A968A] font-bold uppercase tracking-wider mb-1">Win Rate</p>
-                <p className="text-3xl font-bold text-[#3FA66B]">
-                  {stats.total > 0 ? Math.round((stats.wins / stats.total) * 100) : 0}%
-                </p>
+          {/* Resume Debate */}
+          {activeDebate && (
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-4">Resume your parley</h2>
+              <div className="bg-gradient-to-r from-[var(--color-surface-raised)] to-[var(--color-surface)] p-6 md:p-8 rounded-2xl border border-[var(--color-gold)]/30 relative overflow-hidden group">
+                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10" />
+                <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                  <div>
+                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-md mb-3 inline-block ${
+                      activeDebate.status === 'live' ? 'bg-[var(--color-pro)]/20 text-[var(--color-pro)]' : 'bg-[var(--color-gold)]/20 text-[var(--color-gold)]'
+                    }`}>
+                      {activeDebate.status === 'live' ? 'Live Now' : 'Waiting for Opponent'}
+                    </span>
+                    <h3 className="text-2xl font-serif font-bold mb-2">{activeDebate.topics?.title}</h3>
+                    <p className="text-[var(--color-text-muted)] text-sm">Jump back into the debate room.</p>
+                  </div>
+                  <Link href={`/debate/${activeDebate.id}`}>
+                    <Button size="lg" className="whitespace-nowrap shadow-[0_0_20px_rgba(212,175,55,0.2)]">
+                      Continue Debate <ArrowRight size={18} className="ml-2" />
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </div>
+          )}
 
-            <div className="bg-[#141416] p-6 rounded-2xl border border-[#2A2A2E]">
-              <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <Play size={18} className="text-[#D4AF37]" /> Quick Actions
+          {/* Trending Topics */}
+          <div>
+            <div className="flex justify-between items-end mb-4">
+              <h2 className="text-2xl font-serif font-bold flex items-center gap-2">
+                <Flame className="text-[var(--color-gold)]" size={24} /> Trending Topics
               </h2>
-              <div className="space-y-3">
-                <Link href="/topics" className="w-full bg-gradient-to-r from-[#D4AF37] to-[#A8841F] hover:from-[#E6C458] hover:to-[#D4AF37] text-[#0B0B0C] font-bold py-3 px-4 rounded-xl flex items-center justify-between transition-all group">
-                  <span className="flex items-center gap-2"><Plus size={18} /> Start New Debate</span>
-                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                </Link>
-                <Link href="/profile" className="w-full bg-[#1C1C1F] hover:bg-[#2A2A2E] border border-[#2A2A2E] text-[#F2EFE6] font-bold py-3 px-4 rounded-xl flex items-center justify-between transition-all">
-                  <span className="flex items-center gap-2"><Trophy size={18} className="text-[#D4AF37]" /> View Leaderboard</span>
-                  <ArrowRight size={18} className="text-[#9A968A]" />
-                </Link>
-              </div>
+              <Link href="/topics" className="text-sm text-[var(--color-gold)] hover:underline flex items-center gap-1">
+                View All <ArrowRight size={16} />
+              </Link>
+            </div>
+            
+            <div className="space-y-3">
+              {trendingTopics.map(topic => {
+                const debateCount = topic.debates?.[0]?.count || 0
+                return (
+                  <Link href="/topics" key={topic.id} className="block group">
+                    <div className="bg-[var(--color-surface)] p-3 rounded-xl border border-[var(--color-border)] hover:border-[var(--color-gold)]/50 transition-colors flex justify-between items-center gap-4">
+                      
+                      {/* Thumbnail Image */}
+                      {topic.image_url ? (
+                        <img src={topic.image_url} alt={topic.title} className="w-12 h-12 rounded-lg object-cover border border-[var(--color-border)]" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-[var(--color-surface-raised)] flex items-center justify-center border border-[var(--color-border)] text-[var(--color-text-muted)]">
+                          <Swords size={20} />
+                        </div>
+                      )}
+
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-bold text-[var(--color-text-muted)] bg-[var(--color-surface-raised)] px-2 py-0.5 rounded-md uppercase">
+                            {topic.category}
+                          </span>
+                          <span className="text-xs text-[var(--color-text-muted)] flex items-center gap-1">
+                            <Swords size={12} /> {debateCount} debates
+                          </span>
+                        </div>
+                        <h3 className="text-base font-bold text-[var(--color-text)] group-hover:text-[var(--color-gold)] transition-colors line-clamp-1">
+                          {topic.title}
+                        </h3>
+                      </div>
+                      <ArrowRight className="text-[var(--color-border)] group-hover:text-[var(--color-gold)] transition-colors" size={20} />
+                    </div>
+                  </Link>
+                )
+              })}
             </div>
           </div>
 
-          {/* RIGHT COLUMN */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-[#141416] p-6 rounded-2xl border border-[#2A2A2E] min-h-[400px]">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold flex items-center gap-2">
-                  <Swords className="text-[#D4AF37]" /> Active Debates
-                </h2>
-                {activeDebates.length > 0 && (
-                  <span className="text-xs text-[#9A968A]">Showing top 3</span>
-                )}
-              </div>
+        </div>
 
-              {activeDebates.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-center">
-                  <Swords size={48} className="text-[#2A2A2E] mb-4" />
-                  <p className="text-[#9A968A] mb-4">You have no active debates right now.</p>
-                  <Link href="/topics" className="text-[#D4AF37] hover:underline font-medium">
-                    Find a topic to debate
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {activeDebates.map((debate) => {
-                    const isPlayerA = profile?.id === debate.player_a
-                    const isPlayerATurn = (debate.current_turn || 1) % 2 !== 0
-                    const isMyTurn = debate.status === 'live' && ((isPlayerA && isPlayerATurn) || (!isPlayerA && !isPlayerATurn))
-                    
-                    return (
-                      <div key={debate.id} className="bg-[#0B0B0C] p-5 rounded-xl border border-[#2A2A2E] flex items-center justify-between hover:border-[#D4AF37]/50 transition-colors group">
-                        <div>
-                          <div className="flex items-center gap-3 mb-1">
-                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                              debate.status === 'live' ? 'bg-[#3FA66B]/20 text-[#3FA66B]' : 'bg-[#D4AF37]/20 text-[#D4AF37]'
-                            }`}>
-                              {debate.status === 'live' ? 'LIVE' : 'WAITING'}
-                            </span>
-                            {isMyTurn && (
-                              <span className="text-[10px] font-bold uppercase tracking-wider bg-[#D9534F]/20 text-[#D9534F] px-2 py-0.5 rounded-full animate-pulse">
-                                It's Your Turn!
-                              </span>
-                            )}
-                          </div>
-                          <h3 className="font-bold text-[#F2EFE6] text-lg">{debate.topics?.title}</h3>
-                        </div>
-                        
-                        <Link 
-                          href={`/debate/${debate.id}`}
-                          className={`px-5 py-2 rounded-lg font-bold text-sm transition-colors flex items-center gap-2 ${
-                            isMyTurn 
-                              ? 'bg-[#D4AF37] hover:bg-[#E6C458] text-[#0B0B0C]' 
-                              : 'bg-[#1C1C1F] hover:bg-[#2A2A2E] text-[#F2EFE6] border border-[#2A2A2E]'
-                          }`}
-                        >
-                          {isMyTurn ? 'Enter Room' : 'View Room'}
-                          <ArrowRight size={16} />
-                        </Link>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+        {/* RIGHT COLUMN */}
+        <div className="space-y-8">
+          
+          {/* Top 5 Leaderboard */}
+          <div className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <Trophy className="text-[var(--color-gold)]" size={20} /> Top 5
+              </h2>
+              <Link href="/profile" className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]">View all</Link>
             </div>
+            
+            <div className="space-y-4">
+              {leaderboard.map((player, index) => (
+                <div key={player.id} className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className={`text-sm font-bold w-4 ${index === 0 ? 'text-[var(--color-gold)]' : 'text-[var(--color-text-muted)]'}`}>
+                      {index + 1}
+                    </span>
+                    {player.avatar_url ? (
+                      <img src={player.avatar_url} alt={player.username} className="w-8 h-8 rounded-full object-cover border border-[var(--color-border)]" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-[var(--color-surface-raised)] flex items-center justify-center text-xs font-bold text-[var(--color-text-muted)] border border-[var(--color-border)]">
+                        {player.username.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <span className={`text-sm font-medium ${player.id === profile?.id ? 'text-[var(--color-gold)]' : 'text-[var(--color-text)]'}`}>
+                      {player.username} {player.id === profile?.id && '(You)'}
+                    </span>
+                  </div>
+                  <span className="text-sm font-bold text-[var(--color-text-muted)]">{player.points}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick Start Call to Action */}
+          <div className="bg-gradient-to-br from-[var(--color-surface-raised)] to-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-6 text-center">
+            <Swords className="text-[var(--color-gold)] mx-auto mb-3" size={32} />
+            <h3 className="text-lg font-serif font-bold mb-2">Start a new Parley</h3>
+            <p className="text-sm text-[var(--color-text-muted)] mb-4">Pick a topic and choose your side.</p>
+            <Link href="/topics">
+              <Button className="w-full">Browse Topics</Button>
+            </Link>
           </div>
 
         </div>
