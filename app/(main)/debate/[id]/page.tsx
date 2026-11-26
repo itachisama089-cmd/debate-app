@@ -48,8 +48,8 @@ function DebateRoomContent() {
     const { data: debateData } = await supabase().from('debates').select('*, topics(title, side_a_label, side_b_label)').eq('id', debateId).single()
     if (debateData) { setDebate(debateData); setTopic(debateData.topics) }
 
-    // Order by turn_number to ensure chat flows correctly
-    const { data: turnsData } = await supabase().from('turns').select('*').eq('debate_id', debateId).order('turn_number', { ascending: true })
+    // CHANGED: Order by created_at since turn_number is gone
+    const { data: turnsData } = await supabase().from('turns').select('*').eq('debate_id', debateId).order('created_at', { ascending: true })
     if (turnsData) setTurns(turnsData)
 
     const { data: judgeData } = await supabase().from('judgments').select('*').eq('debate_id', debateId).single()
@@ -154,16 +154,13 @@ function DebateRoomContent() {
         setIsUploading(false)
       }
 
-      // We calculate the next turn number based on how many messages already exist
-      const nextTurnNumber = turns.length + 1
-
+      // CHANGED: Removed turn_number completely
       const res = await fetch(`/api/debates/${debateId}/turns`, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ 
           content: message || "[Image sent]", 
-          image_url: uploadedImageUrl,
-          turn_number: nextTurnNumber
+          image_url: uploadedImageUrl
         }) 
       })
       
@@ -234,6 +231,7 @@ function DebateRoomContent() {
           <h1 className="text-3xl font-serif font-extrabold mb-3 text-[var(--color-text)]">Topic: {topic?.title}</h1>
           {!isSpectator && <p className="text-[var(--color-text-muted)] mb-8">You are arguing <span className={`font-bold px-2 py-1 rounded-md border ${myColorClass}`}>{myStanceLabel}</span></p>}
           
+          {/* CRITICAL FIX: Ensure players cannot accidentally become judges even if they open the judge link */}
           {isSpectator && isJudgeInvite ? (
              <div className="bg-[var(--color-bg)] p-6 rounded-lg border border-[var(--color-gold)] mb-8">
                 <Gavel className="mx-auto text-[var(--color-gold)] mb-4" size={48} />

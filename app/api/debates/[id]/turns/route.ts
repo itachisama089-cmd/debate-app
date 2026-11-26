@@ -19,7 +19,7 @@ export async function POST(
   const body = await req.json()
   const { content, image_url } = body
 
-  // 3. Validate the payload (No more turn_number check)
+  // 3. Validate the payload
   if (!content && !image_url) {
     return NextResponse.json(
       { error: 'Missing content or image' },
@@ -27,7 +27,26 @@ export async function POST(
     )
   }
 
-  // 4. Insert the new turn into the database
+  // 4. SECURITY CHECK: Make sure the debate is active and the user is a player
+  const { data: debate, error: debateError } = await supabase
+    .from('debates')
+    .select('player_a, player_b, status')
+    .eq('id', debateId)
+    .single()
+
+  if (debateError || !debate) {
+    return NextResponse.json({ error: 'Debate not found' }, { status: 404 })
+  }
+
+  if (debate.status !== 'live') {
+    return NextResponse.json({ error: 'Debate is not live' }, { status: 400 })
+  }
+
+  if (user.id !== debate.player_a && user.id !== debate.player_b) {
+    return NextResponse.json({ error: 'Only players can send messages' }, { status: 403 })
+  }
+
+  // 5. Insert the new turn into the database
   const { data, error } = await supabase
     .from('turns')
     .insert({
@@ -35,7 +54,6 @@ export async function POST(
       user_id: user.id,
       content: content || '',
       image_url: image_url || null,
-      // turn_number is removed since the column is gone
     })
     .select()
     .single()
