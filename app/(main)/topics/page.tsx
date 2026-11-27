@@ -24,7 +24,7 @@ export default function TopicsPage() {
 
   // Create Topic Form State
   const [newTitle, setNewTitle] = useState('')
-  const [newCategory, setNewCategory] = useState('Non-Fiction') // Default to Non-Fiction
+  const [newCategory, setNewCategory] = useState('Non-Fiction') 
   const [sideALabel, setSideALabel] = useState('Pro')
   const [sideBLabel, setSideBLabel] = useState('Con')
   
@@ -40,6 +40,9 @@ export default function TopicsPage() {
   const [privateSideB, setPrivateSideB] = useState('Con')
   const [privateStance, setPrivateStance] = useState<'pro' | 'con'>('pro')
   const [isCreatingPrivate, setIsCreatingPrivate] = useState(false)
+
+  // NEW: State to handle the "Joining..." loading state on the buttons
+  const [startingKey, setStartingKey] = useState<string | null>(null)
 
   async function fetchTopics() {
     const { data } = await supabase()
@@ -129,17 +132,34 @@ export default function TopicsPage() {
     }
   }
 
+  // UPDATED: Robust matchmaking function with loading state and error handling
   const handleStartDebate = async (topicId: string, stance: 'pro' | 'con') => {
-    await supabase().rpc('increment_topic_view', { t_id: topicId })
-    const res = await fetch('/api/debates', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic_id: topicId, stance })
-    })
-    if (res.ok) {
-      const debate = await res.json()
-      router.push(`/debate/${debate.id}`)
+    if (startingKey) return
+    setStartingKey(`${topicId}-${stance}`)
+    
+    try {
+      // Count the view in the background so it can never block the button
+      supabase().rpc('increment_topic_view', { t_id: topicId }).then(() => {}, () => {})
+
+      const res = await fetch('/api/debates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // FIXED: Sending "stance_a" instead of "stance" to match the API
+        body: JSON.stringify({ topic_id: topicId, stance_a: stance })
+      })
+      
+      const data = await res.json().catch(() => null)
+      
+      if (res.ok && data?.id) {
+        router.push(`/debate/${data.id}`)
+        return
+      }
+      alert(data?.error || 'Could not start the debate. Please try again.')
+    } catch {
+      alert('Network problem. Please check your connection and try again.')
     }
+    
+    setStartingKey(null)
   }
 
   const handleCreatePrivateRoom = async (e: React.FormEvent) => {
@@ -263,16 +283,27 @@ export default function TopicsPage() {
                 {/* Face-off Buttons */}
                 <div className="flex border-t border-[var(--color-border)] h-14">
                   <button 
+                    disabled={startingKey !== null}
                     onClick={() => handleStartDebate(topic.id, 'pro')} 
-                    className="flex-1 flex items-center justify-center bg-[var(--color-pro)]/10 hover:bg-[var(--color-pro)]/20 text-[var(--color-pro)] font-bold text-sm border-r border-[var(--color-border)] transition-colors"
+                    className="disabled:opacity-50 disabled:cursor-not-allowed flex-1 flex items-center justify-center bg-[var(--color-pro)]/10 hover:bg-[var(--color-pro)]/20 text-[var(--color-pro)] font-bold text-sm border-r border-[var(--color-border)] transition-colors"
                   >
-                    {topic.side_a_label || 'Pro'}
+                    {startingKey === `${topic.id}-pro` ? (
+                      <Loader2 className="animate-spin" size={18} />
+                    ) : (
+                      topic.side_a_label || 'Pro'
+                    )}
                   </button>
+                  
                   <button 
+                    disabled={startingKey !== null}
                     onClick={() => handleStartDebate(topic.id, 'con')} 
-                    className="flex-1 flex items-center justify-center bg-[var(--color-con)]/10 hover:bg-[var(--color-con)]/20 text-[var(--color-con)] font-bold text-sm transition-colors"
+                    className="disabled:opacity-50 disabled:cursor-not-allowed flex-1 flex items-center justify-center bg-[var(--color-con)]/10 hover:bg-[var(--color-con)]/20 text-[var(--color-con)] font-bold text-sm transition-colors"
                   >
-                    {topic.side_b_label || 'Con'}
+                    {startingKey === `${topic.id}-con` ? (
+                      <Loader2 className="animate-spin" size={18} />
+                    ) : (
+                      topic.side_b_label || 'Con'
+                    )}
                   </button>
                 </div>
               </div>
@@ -353,7 +384,7 @@ export default function TopicsPage() {
         </div>
       )}
 
-      {/* --- PRIVATE ROOM MODAL --- (Kept exactly the same) */}
+      {/* --- PRIVATE ROOM MODAL --- */}
       {isPrivateModalOpen && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-[var(--color-surface)] w-full max-w-md rounded-2xl border border-[var(--color-border)] p-6 shadow-2xl relative">

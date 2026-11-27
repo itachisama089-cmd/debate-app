@@ -21,7 +21,7 @@ export default function Sidebar() {
         {/* Logo */}
         <div className="flex items-center gap-3 mb-10 px-2 mt-4">
           <Trophy className="text-[#D4AF37]" size={32} />
-          <span className="text-[#F2EFE6] text-2xl font-bold tracking-wide">DebateHub</span>
+          <span className="text-[#F2EFE6] text-2xl font-bold tracking-wide">Parley</span>
         </div>
 
         {/* Nav Links */}
