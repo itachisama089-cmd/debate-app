@@ -1,11 +1,25 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, FileText, MessageSquare, Bell, User, Trophy } from 'lucide-react'
+import { supabase } from '@/lib/supabase/client'
+import { Home, FileText, MessageSquare, Bell, User, Trophy, ShieldAlert } from 'lucide-react'
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    async function checkAdmin() {
+      const { data: { user } } = await supabase().auth.getUser()
+      if (user) {
+        const { data } = await supabase().from('profiles').select('is_admin').eq('id', user.id).single()
+        if (data?.is_admin) setIsAdmin(true)
+      }
+    }
+    checkAdmin()
+  }, [])
 
   const links = [
     { name: 'Dashboard', href: '/dashboard', icon: Home },
@@ -43,6 +57,21 @@ export default function Sidebar() {
               </Link>
             )
           })}
+
+          {/* ADMIN PANEL LINK (Only shows if isAdmin is true) */}
+          {isAdmin && (
+            <Link 
+              href="/admin"
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                pathname === '/admin' 
+                  ? 'bg-[#D4AF37]/10 text-[#D4AF37] border-l-4 border-[#D4AF37]' 
+                  : 'text-[#D4AF37] hover:text-[#E6C458] hover:bg-[#1C1C1F] border-l-4 border-transparent'
+              }`}
+            >
+              <ShieldAlert size={20} />
+              <span className="font-medium">Admin Panel</span>
+            </Link>
+          )}
         </nav>
       </div>
 
