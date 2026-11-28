@@ -111,6 +111,28 @@ function DebateRoomContent() {
     return () => clearInterval(interval)
   }, [debate?.deadline, debate?.status, debateId])
 
+  // NEW: Waiting for an invited human judge to accept: countdown, then the AI takes over
+  const [waitLeft, setWaitLeft] = useState<number | null>(null)
+  const autoForcedRef = useRef(false)
+  
+  useEffect(() => {
+    if (!debate || debate.status !== 'judging' || !debate.judge_wait_until || debate.judge_id) {
+      setWaitLeft(null)
+      return
+    }
+    const tick = () => {
+      const left = Math.max(0, Math.floor((new Date(debate.judge_wait_until).getTime() - Date.now()) / 1000))
+      setWaitLeft(left)
+      if (left === 0 && !autoForcedRef.current && (userId === debate.player_a || userId === debate.player_b)) {
+        autoForcedRef.current = true
+        fetch(`/api/debates/${debateId}/force-judge`, { method: 'POST' })
+      }
+    }
+    tick()
+    const t = setInterval(tick, 1000)
+    return () => clearInterval(t)
+  }, [debate?.status, debate?.judge_wait_until, debate?.judge_id, userId, debateId, debate?.player_a, debate?.player_b])
+
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [turns])
 
   const copyToClipboard = (text: string, label: string) => {
@@ -200,9 +222,7 @@ function DebateRoomContent() {
     setIsSubmittingVerdict(false)
   }
 
-  // NEW: Handle leaving the room safely
   const handleLeave = async () => {
-    // If the debate hasn't started yet, mark it as abandoned
     if (debate?.status === 'waiting') {
       await fetch(`/api/debates/${debateId}/leave`, { method: 'POST' })
     }
@@ -266,7 +286,6 @@ function DebateRoomContent() {
               <p className="text-lg font-medium text-[var(--color-gold)]">Finding an Opponent...</p>
             </div>
           )}
-          {/* UPDATED: Use handleLeave to clean up the room */}
           <button onClick={handleLeave} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors py-3">Leave</button>
         </div>
       </div>
@@ -323,6 +342,14 @@ function DebateRoomContent() {
           </div>
         </div>
 
+        {/* NEW: Judge invitation banner shown to the invited judge */}
+        {isSpectator && isJudgeInvite && !debate.judge_id && (debate.status === 'live' || (debate.status === 'judging' && debate.judge_wait_until)) && (
+          <div className="p-4 bg-[var(--color-gold)]/10 border-b border-[var(--color-gold)]/40 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <p className="text-[var(--color-gold)] font-medium flex items-center gap-2"><Gavel size={18} /> You have been invited to judge this debate.</p>
+            <Button onClick={handleBecomeJudge}>Accept Judge Role</Button>
+          </div>
+        )}
+
         {/* Chat Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {turns.map((turn) => {
@@ -378,7 +405,8 @@ function DebateRoomContent() {
                     <code className="text-xs bg-[var(--color-bg)] p-2 rounded border border-[var(--color-border)] w-full sm:max-w-[200px] truncate text-[var(--color-text-muted)]">
                       {currentUrl}?role=judge
                     </code>
-                    <Button size="sm" onClick={() => copyToClipboard(`${currentUrl}?role=judge`, "Judge invite")} className="w-full sm:w-auto flex items-center gap-2">
+                    {/* UPDATED: Also records the invite in the DB */}
+                    <Button size="sm" onClick={() => { copyToClipboard(`${currentUrl}?role=judge`, "Judge invite"); fetch(`/api/debates/${debateId}/invite-judge`, { method: 'POST' }).catch(() => {}) }} className="w-full sm:w-auto flex items-center gap-2">
                       <Copy size={16} /> Copy Link
                     </Button>
                   </div>
@@ -460,20 +488,38 @@ function DebateRoomContent() {
                 </Button>
               </form>
             ) : (
+              /* NEW: Smart waiting screen (Human Assigned vs Judge Invited vs AI working) */
               <div className="text-center p-6 bg-[var(--color-surface-raised)] rounded-xl border border-[var(--color-gold)]/50 text-[var(--color-gold)] flex flex-col items-center gap-4">
-                <p>The debate has ended. Waiting for the Human Judge to deliver their verdict...</p>
-                
-                {(isPlayerA || isPlayerB) && (
-                  <Button 
-                    variant="secondary"
-                    onClick={async () => {
-                      if(window.confirm("Is the judge missing? Click OK to kick them and have the AI judge instead.")) {
-                        await fetch(`/api/debates/${debateId}/force-judge`, { method: 'POST' })
-                      }
-                    }}
-                  >
-                    Force AI Judging
-                  </Button>
+                {debate.judge_id ? (
+                  <>
+                    <p>The debate has ended. Waiting for the Human Judge to deliver their verdict...</p>
+                    {(isPlayerA || isPlayerB) && (
+                      <Button 
+                        variant="secondary"
+                        onClick={async () => {
+                          if(window.confirm("Is the judge missing? Click OK to remove them and have the AI judge instead.")) {
+                            await fetch(`/api/debates/${debateId}/force-judge`, { method: 'POST' })
+                          }
+                        }}
+                      >
+                        Use AI Judge Instead
+                      </Button>
+                    )}
+                  </>
+                ) : debate.judge_wait_until ? (
+                  <>
+                    <p>Waiting for your invited judge to accept{waitLeft !== null ? ` (${Math.floor(waitLeft / 60)}:${String(waitLeft % 60).padStart(2, '0')} left)` : ''}. If nobody accepts, the AI will judge automatically.</p>
+                    {(isPlayerA || isPlayerB) && (
+                      <Button 
+                        variant="secondary"
+                        onClick={async () => { await fetch(`/api/debates/${debateId}/force-judge`, { method: 'POST' }) }}
+                      >
+                        Use AI Judge Now
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <p className="animate-pulse">The AI judge is reviewing the arguments...</p>
                 )}
               </div>
             )

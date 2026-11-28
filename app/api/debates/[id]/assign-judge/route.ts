@@ -1,51 +1,42 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { admin } from '@/lib/supabase/admin'
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: debateId } = await params
   const supabase = await createServerClient()
 
-  // 1. Authenticate the user
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // 2. Fetch the debate
-  const { data: debate, error: fetchError } = await supabase
-    .from('debates')
-    .select('*')
-    .eq('id', debateId)
-    .single()
+  const { data: debate } = await admin.from('debates').select('*').eq('id', debateId).single()
+  if (!debate) return NextResponse.json({ error: 'Debate not found' }, { status: 404 })
 
-  if (fetchError || !debate) {
-    return NextResponse.json({ error: 'Debate not found' }, { status: 404 })
-  }
-
-  // 3. Ensure the debate is in a state that allows a judge
-  if (debate.status !== 'live' && debate.status !== 'waiting') {
-    return NextResponse.json({ error: 'Debate is not active' }, { status: 400 })
-  }
-
-  // 4. Ensure there isn't already a judge assigned
-  if (debate.judge_id) {
-    return NextResponse.json({ error: 'A judge is already assigned to this debate' }, { status: 400 })
-  }
-
-  // 5. CRITICAL FIX: Prevent players from being judges
   if (debate.player_a === user.id || debate.player_b === user.id) {
     return NextResponse.json({ error: 'Players cannot be judges' }, { status: 403 })
   }
 
-  // 6. Assign the current user as the judge
-  const { error: updateError } = await supabase
-    .from('debates')
-    .update({ judge_id: user.id })
-    .eq('id', debateId)
-
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 })
+  const waitingForHuman = debate.status === 'judging' && !!debate.judge_wait_until
+  if (debate.status !== 'live' && debate.status !== 'waiting' && !waitingForHuman) {
+    return NextResponse.json({ error: 'This debate can no longer take a judge' }, { status: 400 })
+  }
+  if (debate.judge_id) {
+    return NextResponse.json({ error: 'A judge is already assigned to this debate' }, { status: 409 })
   }
 
+  const patch: Record<string, any> = { judge_id: user.id }
+  if (waitingForHuman) patch.judge_wait_until = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+
+  const { data: assigned, error } = await admin
+    .from('debates')
+    .update(patch)
+    .eq('id', debateId)
+    .is('judge_id', null)
+    .select('id')
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!assigned || assigned.length === 0) {
+    return NextResponse.json({ error: 'A judge is already assigned to this debate' }, { status: 409 })
+  }
   return NextResponse.json({ success: true })
 }
