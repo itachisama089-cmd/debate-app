@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Trophy, Swords, CheckCircle, XCircle, MinusCircle, Loader2, Edit2, Save, X, Camera } from 'lucide-react'
+import { Trophy, Swords, CheckCircle, XCircle, MinusCircle, Loader2, Edit2, Save, X, Camera, LogOut, Trash2, MessageSquareWarning } from 'lucide-react'
 
 export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
@@ -18,6 +18,11 @@ export default function ProfilePage() {
   const [editError, setEditError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+
+  // Account Settings State
+  const [complaintSubject, setComplaintSubject] = useState('')
+  const [complaintMessage, setComplaintMessage] = useState('')
+  const [isSubmittingComplaint, setIsSubmittingComplaint] = useState(false)
   
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
@@ -85,11 +90,64 @@ export default function ProfilePage() {
     setIsSaving(false)
   }
 
+  const handleLogout = async () => {
+    await supabase().auth.signOut()
+    router.push('/login')
+  }
+
+  const handleDeleteAccount = async () => {
+    const confirm = window.prompt("This will permanently delete your account and all your data. Type 'DELETE' to confirm.")
+    if (confirm !== 'DELETE') {
+      alert("Account deletion cancelled.")
+      return
+    }
+
+    try {
+      const res = await fetch('/api/user/delete', { method: 'DELETE' })
+      const data = await res.json()
+      
+      if (res.ok) {
+        await supabase().auth.signOut()
+        router.push('/login')
+      } else {
+        alert(data.error || "Failed to delete account.")
+      }
+    } catch (error) {
+      alert("Network error. Please try again.")
+    }
+  }
+
+  const handleSubmitComplaint = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmittingComplaint(true)
+
+    try {
+      const res = await fetch('/api/user/complaint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject: complaintSubject, message: complaintMessage })
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        alert("Complaint submitted successfully. We will look into it.")
+        setComplaintSubject('')
+        setComplaintMessage('')
+      } else {
+        alert(data.error || "Failed to submit complaint.")
+      }
+    } catch (error) {
+      alert("Network error. Please try again.")
+    } finally {
+      setIsSubmittingComplaint(false)
+    }
+  }
+
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#0B0B0C] text-[#D4AF37]"><Loader2 className="animate-spin" size={48} /></div>
 
   let wins = 0, losses = 0, draws = 0
   history.forEach(debate => {
-    // Safely extract judgment data
     const judgment = Array.isArray(debate.judgments) ? debate.judgments[0] : debate.judgments
     if (!judgment) return
     
@@ -102,6 +160,7 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-[#0B0B0C] p-8 text-[#F2EFE6]">
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
         
+        {/* LEFT COLUMN */}
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-[#141416] p-8 rounded-2xl border border-[#2A2A2E] text-center relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-br from-[#1C1C1F] to-[#141416] -z-10" />
@@ -174,11 +233,51 @@ export default function ProfilePage() {
               <p className="text-xs text-[#9A968A]">Draws</p>
             </div>
           </div>
+
+          {/* NEW: ACCOUNT SETTINGS & ACTIONS */}
+          <div className="bg-[#141416] p-6 rounded-2xl border border-[#2A2A2E] space-y-4">
+            <h2 className="text-xl font-bold flex items-center gap-2 mb-2">
+              <MessageSquareWarning className="text-[#D4AF37]" /> Support
+            </h2>
+            
+            <form onSubmit={handleSubmitComplaint} className="space-y-3 mb-6">
+              <input 
+                type="text" 
+                placeholder="Complaint Subject" 
+                value={complaintSubject}
+                onChange={(e) => setComplaintSubject(e.target.value)}
+                required
+                maxLength={120}
+                className="w-full bg-[#1C1C1F] text-[#F2EFE6] border border-[#2A2A2E] rounded-lg p-2 text-sm focus:outline-none focus:border-[#D4AF37]"
+              />
+              <textarea 
+                placeholder="Describe your issue..." 
+                value={complaintMessage}
+                onChange={(e) => setComplaintMessage(e.target.value)}
+                required
+                maxLength={2000}
+                className="w-full bg-[#1C1C1F] text-[#F2EFE6] border border-[#2A2A2E] rounded-lg p-2 h-20 text-sm focus:outline-none focus:border-[#D4AF37]"
+              />
+              <button type="submit" disabled={isSubmittingComplaint} className="w-full bg-[#2A2A2E] hover:bg-[#3A3A3E] text-[#F2EFE6] font-bold py-2 rounded-lg text-sm transition-colors disabled:opacity-50">
+                {isSubmittingComplaint ? 'Submitting...' : 'Submit Complaint'}
+              </button>
+            </form>
+
+            <hr className="border-[#2A2A2E]" />
+
+            <button onClick={handleLogout} className="w-full bg-[#1C1C1F] hover:bg-[#2A2A2E] border border-[#2A2A2E] text-[#F2EFE6] font-bold py-2 rounded-lg flex items-center justify-center gap-2 text-sm transition-colors">
+              <LogOut size={16} /> Log Out
+            </button>
+
+            <button onClick={handleDeleteAccount} className="w-full bg-[#D9534F]/10 hover:bg-[#D9534F]/20 border border-[#D9534F]/50 text-[#D9534F] font-bold py-2 rounded-lg flex items-center justify-center gap-2 text-sm transition-colors">
+              <Trash2 size={16} /> Delete Account
+            </button>
+          </div>
         </div>
 
+        {/* RIGHT COLUMN */}
         <div className="lg:col-span-2 space-y-8">
           
-          {/* UPDATED LEADERBOARD SECTION */}
           <div className="bg-[#141416] p-6 rounded-2xl border border-[#2A2A2E]">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
               <Trophy className="text-[#D4AF37]" /> Global Leaderboard
@@ -189,7 +288,6 @@ export default function ProfilePage() {
                 return (
                   <div key={player.id} className={`flex items-center justify-between p-3 rounded-lg border w-full ${player.id === profile?.id ? 'bg-[#D4AF37]/10 border-[#D4AF37]/50' : isRank1 ? 'bg-gradient-to-r from-[#D4AF37]/20 to-[#141416] border-[#D4AF37]/30' : 'bg-[#0B0B0C] border-[#2A2A2E]'}`}>
                     
-                    {/* LEFT SIDE: Rank, Avatar, Username */}
                     <div className="flex items-center gap-4 flex-1 min-w-0">
                       <span className={`font-bold w-6 text-center shrink-0 ${isRank1 ? 'text-[#D4AF37] text-lg' : index === 1 ? 'text-[#C0C0C0]' : index === 2 ? 'text-[#CD7F32]' : 'text-[#9A968A]'}`}>
                         #{index + 1}
@@ -210,7 +308,6 @@ export default function ProfilePage() {
                       </span>
                     </div>
 
-                    {/* RIGHT SIDE: Points */}
                     <span className={`font-bold shrink-0 ml-2 text-right whitespace-nowrap ${isRank1 ? 'text-[#D4AF37]' : 'text-[#9A968A]'}`}>
                       {player.points} pts
                     </span>
@@ -220,7 +317,6 @@ export default function ProfilePage() {
               })}
             </div>
           </div>
-          {/* END UPDATED LEADERBOARD SECTION */}
 
           <div className="bg-[#141416] p-6 rounded-2xl border border-[#2A2A2E]">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
@@ -231,10 +327,8 @@ export default function ProfilePage() {
             ) : (
               <div className="space-y-3">
                 {history.map((debate) => {
-                  // Safe extraction for the history mapping
                   const judgment = Array.isArray(debate.judgments) ? debate.judgments[0] : debate.judgments
                   
-                  // If no judgment exists, skip or show a neutral state
                   if (!judgment) {
                     return (
                       <div key={debate.id} className="bg-[#0B0B0C] p-4 rounded-xl border border-[#2A2A2E] flex justify-between items-center">
